@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+body {
+  background-color: #0b0c10;
+  background-image: radial-gradient(rgba(244, 244, 242, 0.14) 1.4px, transparent 1.4px);
+  background-size: 24px 24px;
+  color: #f4f4f2;
+  font-family: "Inter", system-ui, sans-serif;
+}
