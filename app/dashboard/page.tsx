@@ -4,6 +4,9 @@ import { supabase } from "@/lib/supabase";
 import { PILLARS, TaskCache } from "@/lib/types";
 import PillarCard from "@/components/PillarCard";
 
+export const dynamic = "force-dynamic";
+
+
 type PillarCounts = Record<string, { today: number; overdue: number }>;
 
 export default function DashboardPage() {
