@@ -12,10 +12,31 @@ type PillarCounts = Record<string, { today: number; overdue: number }>;
 export default function DashboardPage() {
   const [counts, setCounts] = useState<PillarCounts | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   useEffect(() => {
     load();
   }, []);
+
+  async function sync() {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch("/api/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setSyncMsg(
+        `Todoist: ${data.summary.todoist} · TickTick: ${data.summary.ticktick} · Calendar: ${data.summary.calendar}` +
+          (data.summary.classified ? ` · ${data.summary.classified} classificadas` : "")
+      );
+      await load();
+    } catch (e: any) {
+      setSyncMsg("Erro na sincronização: " + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function load() {
     setError(null);
@@ -56,13 +77,28 @@ export default function DashboardPage() {
             {new Date().toLocaleDateString("pt-PT")}
           </p>
         </div>
-        <button
-          onClick={load}
-          className="bg-white/[0.05] border border-border rounded-lg px-4 py-2 text-[13px] font-medium hover:bg-white/[0.08] transition-colors"
-        >
-          ↻ Atualizar
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={sync}
+            disabled={syncing}
+            className="bg-accent text-white rounded-lg px-4 py-2 text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {syncing ? "a sincronizar…" : "⟳ Sincronizar agora"}
+          </button>
+          <button
+            onClick={load}
+            className="bg-white/[0.05] border border-border rounded-lg px-4 py-2 text-[13px] font-medium hover:bg-white/[0.08] transition-colors"
+          >
+            ↻ Atualizar
+          </button>
+        </div>
       </header>
+
+      {syncMsg && (
+        <div className="bg-white/[0.04] border border-border rounded-lg px-4 py-2 text-[12.5px] text-muted mb-4">
+          {syncMsg}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg px-4 py-3 text-[13px] mb-4">
