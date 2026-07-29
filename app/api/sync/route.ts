@@ -43,19 +43,25 @@ export async function POST() {
       if (upsertErr) summary.tasks_error = upsertErr.message;
     }
 
-    // Classificar pilar SO das tarefas que ainda nao tem um (nunca re-inferir)
+    // Classificar pilar SO das tarefas que ainda nao tem um (nunca re-inferir).
+    // Uma so chamada em lote no fim — atualizar linha a linha esgotava o limite
+    // de subrequests do Worker quando havia muitas tarefas por classificar.
     const { data: unclassified } = await sb
       .from("tasks_cache")
-      .select("id, content")
+      .select("id, content, user_id, source, due, status")
       .eq("user_id", userId)
       .is("pillar", null);
 
     if (unclassified && unclassified.length > 0) {
       const pillars = await classifyPillars(unclassified);
-      for (const [id, pillar] of Object.entries(pillars)) {
-        await sb.from("tasks_cache").update({ pillar }).eq("id", id);
+      const updates = unclassified
+        .filter((t) => pillars[t.id])
+        .map((t) => ({ ...t, pillar: pillars[t.id] }));
+      if (updates.length > 0) {
+        const { error: classifyErr } = await sb.from("tasks_cache").upsert(updates, { onConflict: "id" });
+        if (classifyErr) summary.classify_error = classifyErr.message;
       }
-      summary.classified = Object.keys(pillars).length;
+      summary.classified = updates.length;
     }
 
     // ── Google Calendar -> agenda_cache (agrupado por dia) ──
@@ -71,18 +77,18 @@ export async function POST() {
       if (!byDate[day]) byDate[day] = [];
       byDate[day].push(ev);
     }
-    for (const [date, dayEvents] of Object.entries(byDate)) {
-      const { error } = await sb.from("agenda_cache").upsert(
-        {
-          user_id: userId,
-          date,
-          source_integration_id: null,
-          payload: dayEvents,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,date,source_integration_id" }
-      );
-      if (error) summary.agenda_error = error.message;
+    const agendaRows = Object.entries(byDate).map(([date, dayEvents]) => ({
+      user_id: userId,
+      date,
+      source_integration_id: null,
+      payload: dayEvents,
+      updated_at: new Date().toISOString(),
+    }));
+    if (agendaRows.length > 0) {
+      const { error: agendaErr } = await sb
+        .from("agenda_cache")
+        .upsert(agendaRows, { onConflict: "user_id,date,source_integration_id" });
+      if (agendaErr) summary.agenda_error = agendaErr.message;
     }
 
     return NextResponse.json({ ok: true, summary });
