@@ -14,7 +14,11 @@ export function LineChartCard(props: {
   const baseY = H - padB;
   const ptsA: [number, number][] = [[x0, yFor(todoist[0])], [x1, yFor(todoist[1])]];
   const ptsB: [number, number][] = [[x0, yFor(ticktick[0])], [x1, yFor(ticktick[1])]];
-  const line = (pts: [number, number][]) => "M" + pts.map((p) => p.join(",")).join(" L");
+  const line = (pts: [number, number][]) => {
+    const [p0, p1] = pts;
+    const midX = (p0[0] + p1[0]) / 2;
+    return `M${p0[0]},${p0[1]} C${midX},${p0[1]} ${midX},${p1[1]} ${p1[0]},${p1[1]}`;
+  };
   const area = (pts: [number, number][]) =>
     line(pts) + ` L${pts[1][0]},${baseY} L${pts[0][0]},${baseY} Z`;
   const gridVals = [0.33, 0.66, 1].map((f) => Math.round(max * f));

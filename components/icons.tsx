@@ -1,9 +1,9 @@
 export const IconDashboard = (props: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={props.className}>
-    <rect x="3" y="3" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
-    <rect x="13" y="3" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
-    <rect x="3" y="13" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
-    <rect x="13" y="13" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    <rect x="3" y="3" width="10" height="9" rx="1.5" fill="currentColor" opacity="0.9" />
+    <rect x="15" y="3" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    <rect x="15" y="11" width="6" height="10" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    <rect x="3" y="14" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
   </svg>
 );
 
