@@ -20,3 +20,21 @@ export interface TaskCache {
   delegable: boolean;
   updated_at: string;
 }
+
+export interface Integration {
+  id: string;
+  name: string;
+  description: string | null;
+  connected: boolean;
+  capabilities: string[];
+  created_at: string;
+}
+
+export interface IntegrationTool {
+  id: string;
+  integration_id: string;
+  name: string;
+  description: string | null;
+  input_schema: any;
+}
+

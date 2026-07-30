@@ -73,29 +73,33 @@ export default function DashboardPage() {
             <span className="text-white">Sistema</span>{" "}
             <span className="text-accent">JS</span>
           </h1>
-          <p className="text-[13px] font-mono text-muted mt-1">
-            {new Date().toLocaleDateString("pt-PT")}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-ok/10 rounded w-fit mt-2">
+            <span className="w-1.5 h-1.5 rounded-[1px] bg-ok animate-pulse" />
+            <span className="text-[11px] font-mono font-bold text-ok tracking-wide">OPERACIONAL</span>
+          </div>
+          <p className="text-[12px] font-mono text-faint mt-1.5">
+            sync {new Date().toLocaleDateString("pt-PT")}
           </p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={sync}
             disabled={syncing}
-            className="bg-accent text-white rounded-lg px-4 py-2 text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="bg-accent text-bg rounded px-4 py-2 text-[11px] font-mono font-bold uppercase tracking-wide hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {syncing ? "a sincronizar…" : "⟳ Sincronizar agora"}
           </button>
           <button
             onClick={load}
-            className="bg-white/[0.05] border border-border rounded-lg px-4 py-2 text-[13px] font-medium hover:bg-white/[0.08] transition-colors"
+            className="bg-transparent border border-border rounded px-4 py-2 text-[11px] font-mono font-semibold text-muted hover:text-white hover:border-white/20 transition-colors"
           >
-            ↻ Atualizar
+            ↻ ATUALIZAR
           </button>
         </div>
       </header>
 
       {syncMsg && (
-        <div className="bg-white/[0.04] border border-border rounded-lg px-4 py-2 text-[12.5px] text-muted mb-4">
+        <div className="bg-white/[0.04] border border-border rounded px-4 py-2 text-[12.5px] text-muted mb-4">
           {syncMsg}
         </div>
       )}
