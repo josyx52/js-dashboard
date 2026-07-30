@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [syncTime, setSyncTime] = useState<string>("--:--");
+  const [updating, setUpdating] = useState(false);
   const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -122,10 +123,15 @@ export default function DashboardPage() {
             {syncing ? "…" : "⟳ SINCRONIZAR"}
           </button>
           <button
-            onClick={load}
-            className="flex items-center gap-2 px-4 py-[9px] bg-transparent border border-white/[0.14] rounded text-white font-mono font-semibold text-[11px] tracking-[0.05em] whitespace-nowrap hover:border-accent hover:text-accent transition-colors"
+            onClick={async () => {
+              setUpdating(true);
+              await load();
+              setUpdating(false);
+            }}
+            disabled={updating}
+            className="flex items-center gap-2 px-4 py-[9px] bg-transparent border border-white/[0.14] rounded text-white font-mono font-semibold text-[11px] tracking-[0.05em] whitespace-nowrap hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
           >
-            ↻ ATUALIZAR
+            {updating ? "…" : "↻ ATUALIZAR"}
           </button>
         </div>
       </div>
