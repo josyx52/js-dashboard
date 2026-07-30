@@ -6,7 +6,6 @@ import PillarCard from "@/components/PillarCard";
 
 export const dynamic = "force-dynamic";
 
-
 type PillarCounts = Record<string, { today: number; overdue: number }>;
 
 export default function DashboardPage() {
@@ -14,6 +13,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [syncTime, setSyncTime] = useState<string>("--:--");
 
   useEffect(() => {
     load();
@@ -40,9 +40,6 @@ export default function DashboardPage() {
 
   async function load() {
     setError(null);
-    // Leitura simples — nenhuma chamada ao Groq aqui. O pilar ja foi
-    // classificado e gravado na primeira sincronizacao (ver /lib/pillar-sync.ts,
-    // a implementar na fase de sincronizacao real com Todoist/TickTick).
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await supabase
       .from("tasks_cache")
@@ -63,73 +60,63 @@ export default function DashboardPage() {
       else acc[t.pillar].today += 1;
     }
     setCounts(acc);
+    setSyncTime(new Date().toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }));
   }
 
   return (
-    <div className="p-7">
-      <header className="flex items-center justify-between mb-6">
+    <div className="flex-1 min-w-0 p-[28px_36px] flex flex-col gap-6">
+      <div className="flex items-start justify-between gap-5">
         <div>
-          <h1 className="text-2xl font-bold">
-            <span className="text-white">Sistema</span>{" "}
-            <span className="text-accent">JS</span>
-          </h1>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-ok/10 rounded w-fit mt-2">
-            <span className="w-1.5 h-1.5 rounded-[1px] bg-ok animate-pulse" />
-            <span className="text-[11px] font-mono font-bold text-ok tracking-wide">OPERACIONAL</span>
+          <div className="flex items-center gap-1.5 px-[8px_10px] py-1 bg-[rgba(61,220,132,0.12)] rounded">
+            <div className="w-[6px] h-[6px] rounded-[1px] bg-[#3DDC84] flex-none animate-[pulse-dot_2s_ease-in-out_infinite]" />
+            <span className="font-mono font-bold text-[11px] tracking-[0.03em] text-[#3DDC84]">
+              OPERACIONAL
+            </span>
           </div>
-          <p className="text-[12px] font-mono text-faint mt-1.5">
-            sync {new Date().toLocaleDateString("pt-PT")}
-          </p>
+          <div className="font-mono font-medium text-[12px] text-white/40 mt-1.5">sync {syncTime}</div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-none">
           <button
             onClick={sync}
             disabled={syncing}
-            className="bg-accent text-bg rounded px-4 py-2 text-[11px] font-mono font-bold uppercase tracking-wide hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-[9px] bg-transparent border border-white/[0.14] rounded text-white font-mono font-semibold text-[11px] tracking-[0.05em] whitespace-nowrap hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
           >
-            {syncing ? "a sincronizar…" : "⟳ Sincronizar agora"}
+            {syncing ? "…" : "⟳ SINCRONIZAR"}
           </button>
           <button
             onClick={load}
-            className="bg-transparent border border-border rounded px-4 py-2 text-[11px] font-mono font-semibold text-muted hover:text-white hover:border-white/20 transition-colors"
+            className="flex items-center gap-2 px-4 py-[9px] bg-transparent border border-white/[0.14] rounded text-white font-mono font-semibold text-[11px] tracking-[0.05em] whitespace-nowrap hover:border-accent hover:text-accent transition-colors"
           >
             ↻ ATUALIZAR
           </button>
         </div>
-      </header>
+      </div>
 
       {syncMsg && (
-        <div className="bg-white/[0.04] border border-border rounded px-4 py-2 text-[12.5px] text-muted mb-4">
+        <div className="bg-white/[0.04] border border-white/[0.08] rounded px-4 py-2 font-mono text-[11.5px] text-white/50">
           {syncMsg}
         </div>
       )}
-
       {error && (
-        <div className="bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg px-4 py-3 text-[13px] mb-4">
+        <div className="bg-red-500/10 text-red-400 border border-red-500/30 rounded px-4 py-2 font-mono text-[11.5px]">
           Erro ao carregar: {error}
         </div>
       )}
 
-      <section className="mb-8">
-        <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted mb-3">
-          Pilares
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {PILLARS.map((p) => (
-            <PillarCard
-              key={p.key}
-              label={p.label}
-              color={p.color}
-              today={counts?.[p.key]?.today ?? 0}
-              overdue={counts?.[p.key]?.overdue ?? 0}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* TODO fase seguinte: reaproveitar os graficos e listas
-          (Atrasadas/Para hoje, Todoist vs TickTick) do sistema-3-pilares,
-          agora lendo de tasks_cache em vez de chamar as APIs ao vivo. */}
+      <div
+        className="grid gap-3"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}
+      >
+        {PILLARS.map((p) => (
+          <PillarCard
+            key={p.key}
+            label={p.label}
+            color={p.color}
+            today={counts?.[p.key]?.today ?? 0}
+            overdue={counts?.[p.key]?.overdue ?? 0}
+          />
+        ))}
+      </div>
     </div>
   );
 }

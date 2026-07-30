@@ -84,7 +84,7 @@ export default function IntegracoesPage() {
 
   if (labFor) {
     return (
-      <div className="p-7 max-w-[720px] flex flex-col gap-4">
+      <div className="p-[28px_36px] max-w-[720px] flex flex-col gap-4">
         <button
           onClick={() => setLabFor(null)}
           className="self-start px-3.5 py-1.5 bg-transparent border border-border rounded text-[11px] font-mono font-semibold text-muted hover:text-lab hover:border-lab/50 transition-colors"
@@ -117,7 +117,7 @@ export default function IntegracoesPage() {
   }
 
   return (
-    <div className="p-7 max-w-[720px] flex flex-col gap-3.5">
+    <div className="p-[28px_36px] max-w-[720px] flex flex-col gap-3.5">
       <div className="flex items-center justify-end gap-2">
         <button
           onClick={() => setShowForm((s) => !s)}

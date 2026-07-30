@@ -5,14 +5,22 @@ export default function PillarCard(props: {
   overdue: number;
 }) {
   return (
-    <div className="bg-surface border border-border rounded-md p-4 flex flex-col gap-1 min-w-[140px]">
+    <div className="border border-white/[0.08] bg-surface rounded-md p-[14px] flex flex-col gap-2 min-w-0">
       <div className="flex items-center gap-2">
-        <span className="w-2 h-2 rounded-[1px]" style={{ background: props.color }} />
-        <span className="text-[12px] text-muted font-medium">{props.label}</span>
+        <div className="w-[7px] h-[7px] rounded-[1px] flex-none" style={{ background: props.color }} />
+        <span className="font-mono font-semibold text-[11px] tracking-[0.05em] text-white/50 uppercase">
+          {props.label}
+        </span>
       </div>
-      <div className="text-2xl font-bold mt-1">{props.today}</div>
-      <div className="text-[11px] text-muted font-mono">
-        hoje{props.overdue > 0 ? ` · ${props.overdue} atrasada(s)` : ""}
+      <div className="flex items-baseline gap-2.5">
+        <span className="font-mono font-bold text-[28px] leading-none">{props.today}</span>
+        <span className="font-sans font-medium text-[12px] text-white/40">hoje</span>
+      </div>
+      <div
+        className="font-mono font-medium text-[11px]"
+        style={{ color: props.overdue > 0 ? "#F54E00" : "rgba(244,244,242,0.3)" }}
+      >
+        {props.overdue} atrasada(s)
       </div>
     </div>
   );
