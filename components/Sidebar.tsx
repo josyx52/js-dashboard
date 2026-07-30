@@ -1,13 +1,14 @@
 "use client";
 import { usePathname, useRouter } from "next/navigation";
 import { PILLARS } from "@/lib/types";
+import { IconDashboard, IconNutricao, IconPlug, IconAgendar, IconAgente } from "@/components/icons";
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/nutricao", label: "Nutrição" },
-  { href: "/integracoes", label: "Integrações" },
-  { href: "/agendar", label: "Agendar" },
-  { href: "/agente", label: "Agente" },
+  { href: "/dashboard", label: "Dashboard", Icon: IconDashboard },
+  { href: "/nutricao", label: "Nutrição", Icon: IconNutricao },
+  { href: "/integracoes", label: "Integrações", Icon: IconPlug },
+  { href: "/agendar", label: "Agendar", Icon: IconAgendar },
+  { href: "/agente", label: "Agente", Icon: IconAgente },
 ];
 
 export default function Sidebar() {
@@ -33,9 +34,10 @@ export default function Sidebar() {
               onClick={() => router.push(item.href)}
               className={
                 "flex items-center gap-2.5 px-2.5 py-[9px] rounded cursor-pointer font-sans font-semibold text-[13px] transition-colors " +
-                (active ? "bg-white/[0.06] text-white" : "text-white/60 hover:bg-white/[0.04]")
+                (active ? "bg-white/[0.06] text-accent" : "text-white/60 hover:bg-white/[0.04]")
               }
             >
+              <item.Icon className="w-4 h-4 flex-none" />
               {item.label}
             </div>
           );

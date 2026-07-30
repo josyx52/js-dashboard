@@ -3,17 +3,25 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { PILLARS, TaskCache } from "@/lib/types";
 import PillarCard from "@/components/PillarCard";
+import { LineChartCard, DonutCard, TaskListCard, ListItem } from "@/components/DashboardCharts";
 
 export const dynamic = "force-dynamic";
 
 type PillarCounts = Record<string, { today: number; overdue: number }>;
 
+function pillarMeta(key: string | null) {
+  const p = PILLARS.find((p) => p.key === key);
+  return { label: p ? p.label : "—", color: p ? p.color : "#666" };
+}
+
 export default function DashboardPage() {
+  const [tasks, setTasks] = useState<TaskCache[] | null>(null);
   const [counts, setCounts] = useState<PillarCounts | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [syncTime, setSyncTime] = useState<string>("--:--");
+  const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     load();
@@ -43,7 +51,7 @@ export default function DashboardPage() {
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await supabase
       .from("tasks_cache")
-      .select("pillar, due, status")
+      .select("*")
       .eq("status", "open");
 
     if (error) {
@@ -51,17 +59,47 @@ export default function DashboardPage() {
       return;
     }
 
+    const rows = (data || []) as TaskCache[];
+    setTasks(rows);
+
     const acc: PillarCounts = {};
     for (const p of PILLARS) acc[p.key] = { today: 0, overdue: 0 };
-    for (const t of (data || []) as Pick<TaskCache, "pillar" | "due" | "status">[]) {
-      if (!t.pillar) continue;
-      if (!acc[t.pillar]) continue;
+    for (const t of rows) {
+      if (!t.pillar || !acc[t.pillar]) continue;
       if (t.due && t.due < today) acc[t.pillar].overdue += 1;
       else acc[t.pillar].today += 1;
     }
     setCounts(acc);
     setSyncTime(new Date().toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }));
   }
+
+  async function completeTask(id: string) {
+    setCompletingIds((prev) => new Set(prev).add(id));
+    await supabase.from("tasks_cache").update({ status: "done" }).eq("id", id);
+    await load();
+    setCompletingIds((prev) => {
+      const s = new Set(prev);
+      s.delete(id);
+      return s;
+    });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = tasks || [];
+  const todoistTasks = rows.filter((t) => t.source === "todoist");
+  const ticktickTasks = rows.filter((t) => t.source === "ticktick");
+  const overdueRows = rows.filter((t) => t.due && t.due < today);
+  const todayRows = rows.filter((t) => !t.due || t.due >= today);
+
+  const toListItem = (t: TaskCache): ListItem => {
+    const meta = pillarMeta(t.pillar);
+    return { id: t.id, title: t.content, date: t.due || "", pillarLabel: meta.label, pillarColor: meta.color };
+  };
+
+  const todoistOverdue = todoistTasks.filter((t) => t.due && t.due < today).length;
+  const todoistToday = todoistTasks.length - todoistOverdue;
+  const ticktickOverdue = ticktickTasks.filter((t) => t.due && t.due < today).length;
+  const ticktickToday = ticktickTasks.length - ticktickOverdue;
 
   return (
     <div className="flex-1 min-w-0 p-[28px_36px] flex flex-col gap-6">
@@ -103,10 +141,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div
-        className="grid gap-3"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}
-      >
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
         {PILLARS.map((p) => (
           <PillarCard
             key={p.key}
@@ -116,6 +151,33 @@ export default function DashboardPage() {
             overdue={counts?.[p.key]?.overdue ?? 0}
           />
         ))}
+      </div>
+
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1.3fr 1fr" }}>
+        <LineChartCard
+          todoist={[todoistOverdue, todoistToday]}
+          ticktick={[ticktickOverdue, ticktickToday]}
+        />
+        <DonutCard overdue={overdueRows.length} today={todayRows.length} />
+      </div>
+
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <TaskListCard
+          title="Atrasadas"
+          items={overdueRows.map(toListItem)}
+          accentColor="#FF5F5F"
+          dateColor="rgba(255,95,95,0.75)"
+          onComplete={completeTask}
+          completingIds={completingIds}
+        />
+        <TaskListCard
+          title="Para hoje"
+          items={todayRows.map(toListItem)}
+          accentColor="#F54E00"
+          dateColor="rgba(244,244,242,0.4)"
+          onComplete={completeTask}
+          completingIds={completingIds}
+        />
       </div>
     </div>
   );
