@@ -56,7 +56,11 @@ export async function POST() {
       const pillars = await classifyPillars(unclassified);
       const updates = unclassified
         .filter((t) => pillars[t.id])
-        .map((t) => ({ ...t, pillar: pillars[t.id] }));
+        .map((t) => ({
+          ...t,
+          pillar: pillars[t.id],
+          delegable: pillars[t.id] === "negocio" || pillars[t.id] === "trabalho",
+        }));
       if (updates.length > 0) {
         const { error: classifyErr } = await sb.from("tasks_cache").upsert(updates, { onConflict: "id" });
         if (classifyErr) summary.classify_error = classifyErr.message;
