@@ -171,7 +171,7 @@ export default function IntegracoesPage() {
           className="border border-border bg-surface rounded-md px-5 py-4.5 flex items-center gap-4"
         >
           <div
-            className="w-2 h-2 rounded-[1px] flex-none"
+            className="w-2 h-2 rounded-full flex-none"
             style={{ background: it.connected ? "#3DDC84" : "rgba(255,255,255,0.25)" }}
           />
           <div className="flex-1 min-w-0">
@@ -182,7 +182,7 @@ export default function IntegracoesPage() {
             className="font-mono font-semibold text-[10px] flex-none"
             style={{ color: it.connected ? "#3DDC84" : "rgba(244,244,242,0.4)" }}
           >
-            {it.connected ? "LIGADO" : "DESLIGADO"}
+            {it.connected ? "CONECTADO" : "NÃO CONECTADO"}
           </span>
           <button
             onClick={() => toggle(it)}
@@ -194,7 +194,7 @@ export default function IntegracoesPage() {
                 : { borderColor: "#F54E00", color: "#F54E00" }
             }
           >
-            {togglingId === it.id ? "…" : it.connected ? "DESLIGAR" : "LIGAR"}
+            {togglingId === it.id ? "…" : it.connected ? "DESCONECTAR" : "CONECTAR"}
           </button>
           <button
             onClick={() => openLab(it)}

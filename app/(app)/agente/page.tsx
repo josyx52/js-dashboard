@@ -79,9 +79,11 @@ function ChatTab() {
         {messages.map((m, i) => (
           <div
             key={i}
-            className={
-              "max-w-[75%] px-4 py-2.5 rounded-md text-[13.5px] leading-relaxed " +
-              (m.role === "user" ? "self-end bg-accent/15 border border-accent/30" : "self-start bg-white/[0.03] border border-white/[0.08]")
+            className={"max-w-[75%] px-3.5 py-[11px] rounded-md text-[13px] leading-[1.45] font-medium " + (m.role === "user" ? "self-end" : "self-start")}
+            style={
+              m.role === "user"
+                ? { background: "#F54E00", color: "#0B0C10" }
+                : { background: "#1C1E24", color: "#F4F4F2", border: "1px solid rgba(255,255,255,0.08)" }
             }
           >
             {m.content}

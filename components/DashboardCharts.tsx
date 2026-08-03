@@ -166,8 +166,9 @@ export function TaskListCard(props: {
               />
               <span
                 style={{
-                  font: "600 10px 'JetBrains Mono',monospace", padding: "2px 8px", borderRadius: 3,
-                  background: `${t.pillarColor}26`, color: t.pillarColor, flexShrink: 0,
+                  font: "600 10px 'JetBrains Mono',monospace", letterSpacing: "0.03em",
+                  padding: "3px 8px", borderRadius: 3, flexShrink: 0,
+                  color: t.pillarColor, background: `${t.pillarColor}1a`, border: `1px solid ${t.pillarColor}40`,
                 }}
               >
                 {t.pillarLabel}

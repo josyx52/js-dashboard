@@ -48,7 +48,7 @@ export default function Sidebar() {
         <div className="font-mono font-semibold text-[10px] tracking-[0.06em] text-white/35">PILARES</div>
         {PILLARS.map((p) => (
           <div key={p.key} className="flex items-center gap-2 font-sans font-medium text-[12px] text-white/70">
-            <div className="w-[7px] h-[7px] rounded-[1px] flex-none" style={{ background: p.color }} />
+            <div style={{ width: 7, height: 7, borderRadius: 1, background: p.color, flexShrink: 0 }} />
             {p.label}
           </div>
         ))}
