@@ -5,21 +5,18 @@ export default function PillarCard(props: {
   overdue: number;
 }) {
   return (
-    <div className="border border-white/[0.08] bg-surface rounded-md p-[14px] flex flex-col gap-2 min-w-0">
-      <div className="flex items-center gap-2">
-        <div className="w-[7px] h-[7px] rounded-[1px] flex-none" style={{ background: props.color }} />
-        <span className="font-mono font-semibold text-[11px] tracking-[0.05em] text-white/50 uppercase">
-          {props.label}
+    <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 14, display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 8, height: 8, background: props.color, borderRadius: 1 }} />
+        <span style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.05em", color: "rgba(244,244,242,0.5)" }}>
+          {props.label.toUpperCase()}
         </span>
       </div>
-      <div className="flex items-baseline gap-2.5">
-        <span className="font-mono font-bold text-[28px] leading-none">{props.today}</span>
-        <span className="font-sans font-medium text-[12px] text-white/40">hoje</span>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span style={{ font: "700 28px 'JetBrains Mono',monospace" }}>{props.today}</span>
+        <span style={{ font: "500 12px Inter,sans-serif", color: "rgba(244,244,242,0.4)" }}>hoje</span>
       </div>
-      <div
-        className="font-mono font-medium text-[11px]"
-        style={{ color: props.overdue > 0 ? "#F54E00" : "rgba(244,244,242,0.3)" }}
-      >
+      <div style={{ font: "500 11px 'JetBrains Mono',monospace", color: props.overdue > 0 ? "#F54E00" : "rgba(244,244,242,0.3)" }}>
         {props.overdue} atrasada(s)
       </div>
     </div>

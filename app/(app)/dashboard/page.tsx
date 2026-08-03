@@ -167,11 +167,12 @@ export default function DashboardPage() {
         <DonutCard overdue={overdueRows.length} today={todayRows.length} />
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <TaskListCard
           title="Atrasadas"
           items={overdueRows.map(toListItem)}
           accentColor="#FF5F5F"
+          borderColor="rgba(255,95,95,0.25)"
           dateColor="rgba(255,95,95,0.75)"
           onComplete={completeTask}
           completingIds={completingIds}
@@ -180,6 +181,7 @@ export default function DashboardPage() {
           title="Para hoje"
           items={todayRows.map(toListItem)}
           accentColor="#F54E00"
+          borderColor="rgba(245,78,0,0.25)"
           dateColor="rgba(244,244,242,0.4)"
           onComplete={completeTask}
           completingIds={completingIds}
