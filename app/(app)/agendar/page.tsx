@@ -100,7 +100,7 @@ export default function AgendarPage() {
   }
 
   return (
-    <div className="p-[28px_36px] max-w-[640px] flex flex-col gap-4">
+    <div className="p-[28px_36px] flex flex-col gap-4">
       <form onSubmit={submit} className="border border-white/[0.08] bg-surface rounded-md p-5 flex flex-col gap-2.5">
         <div className="font-mono font-semibold text-[11px] tracking-[0.06em] text-white/40">
           NOVO AGENDAMENTO
