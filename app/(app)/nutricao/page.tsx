@@ -19,6 +19,8 @@ interface BodyEntry {
   lean_mass_kg: number | null;
 }
 
+const SOURCE_COLORS: Record<string, string> = { foto: "#F54E00", manual: "#36CFC9", treino: "#8B7CF6" };
+
 function todayRange() {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -38,6 +40,7 @@ export default function NutricaoPage() {
   const [bodyFat, setBodyFat] = useState("");
   const [leanMass, setLeanMass] = useState("");
   const [savingBody, setSavingBody] = useState(false);
+  const [showBodyForm, setShowBodyForm] = useState(false);
 
   const [label, setLabel] = useState("");
   const [kcal, setKcal] = useState("");
@@ -74,7 +77,7 @@ export default function NutricaoPage() {
       .from("body_composition")
       .select("*")
       .order("date", { ascending: false })
-      .limit(14);
+      .limit(1);
     setBodyHistory((body as BodyEntry[]) || []);
   }
 
@@ -98,6 +101,7 @@ export default function NutricaoPage() {
       setWeight("");
       setBodyFat("");
       setLeanMass("");
+      setShowBodyForm(false);
       await load();
     }
   }
@@ -149,10 +153,15 @@ export default function NutricaoPage() {
     }
   }
 
-  const todayIn = (logs || []).filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0);
-  const todayOut = (logs || []).filter((l) => l.type === "out").reduce((s, l) => s + Number(l.kcal), 0);
-  const deficit = todayOut > 0 ? Math.round(((todayOut - todayIn) / todayOut) * 100) : 0;
+  const basal = 1500;
+  const caloriesIn = (logs || []).filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0);
+  const caloriesOutActivity = (logs || []).filter((l) => l.type === "out").reduce((s, l) => s + Number(l.kcal), 0);
+  const caloriesOut = basal + caloriesOutActivity;
+  const deficitKcal = caloriesOut - caloriesIn;
+  const deficitPct = caloriesOut > 0 ? Math.round((deficitKcal / caloriesOut) * 100) : 0;
+  const isDeficit = deficitKcal >= 0;
   const mealCount = (logs || []).filter((l) => l.type === "in").length;
+  const body = bodyHistory?.[0];
 
   const days: { label: string; in: number; out: number }[] = [];
   for (let i = 6; i >= 0; i--) {
@@ -161,85 +170,164 @@ export default function NutricaoPage() {
     const key = d.toISOString().slice(0, 10);
     const dayLogs = (weekLogs || []).filter((l) => l.created_at.slice(0, 10) === key);
     days.push({
-      label: d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3),
-      in: dayLogs.filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0),
+      label: d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3).toUpperCase(),
+      in: i === 0 ? caloriesIn : dayLogs.filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0),
       out: dayLogs.filter((l) => l.type === "out").reduce((s, l) => s + Number(l.kcal), 0),
     });
   }
-  const maxKcal = Math.max(1, ...days.map((d) => Math.max(d.in, d.out)));
+  const maxCal = Math.max(1, ...days.flatMap((d) => [d.in, d.out]));
+
+  const StatCard = (p: { title: string; value: string; sub: string; color?: string; border?: string }) => (
+    <div style={{ border: `1px solid ${p.border || "rgba(255,255,255,0.08)"}`, background: "#14161B", borderRadius: 6, padding: "16px 18px" }}>
+      <div style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.05em", color: "rgba(244,244,242,0.4)" }}>{p.title}</div>
+      <div style={{ font: "700 26px 'JetBrains Mono',monospace", marginTop: 8, color: p.color || "#F4F4F2" }}>{p.value}</div>
+      <div style={{ font: "500 11px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.35)", marginTop: 4 }}>{p.sub}</div>
+    </div>
+  );
 
   return (
-    <div className="p-[28px_36px] max-w-[820px] flex flex-col gap-5">
+    <div className="p-[28px_36px] max-w-[900px] flex flex-col gap-5">
       {error && (
         <div className="bg-red-500/10 text-red-400 border border-red-500/30 rounded px-4 py-2 font-mono text-[11.5px]">
           {error}
         </div>
       )}
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-        <div className="border border-white/[0.08] bg-surface rounded-md p-[16px_18px]">
-          <div className="font-mono font-semibold text-[11px] tracking-[0.05em] text-white/40">
-            CALORIAS INGERIDAS
-          </div>
-          <div className="font-mono font-bold text-[26px] mt-2 text-accent">{todayIn}</div>
-          <div className="font-mono font-medium text-[11px] text-white/35 mt-1">{mealCount} refeições</div>
-        </div>
-        <div
-          className="border rounded-md p-[16px_18px]"
-          style={{ borderColor: deficit >= 0 ? "rgba(61,220,132,0.3)" : "rgba(255,95,95,0.3)", background: "#14161B" }}
-        >
-          <div className="font-mono font-semibold text-[11px] tracking-[0.05em] text-white/40">
-            DÉFICIT CALÓRICO
-          </div>
-          <div
-            className="font-mono font-bold text-[26px] mt-2"
-            style={{ color: deficit >= 0 ? "#3DDC84" : "#FF5F5F" }}
-          >
-            {deficit}%
-          </div>
-          <div className="font-mono font-medium text-[11px] text-white/35 mt-1">
-            {todayOut - todayIn} kcal
-          </div>
-        </div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+        <StatCard title="PASSOS" value="—" sub="sem integração ligada" />
+        <StatCard title="CALORIAS GASTAS" value={String(caloriesOut)} sub="basal + treino" color="#36CFC9" />
+        <StatCard title="CALORIAS INGERIDAS" value={String(caloriesIn)} sub={`${mealCount} refeições`} color="#F54E00" />
+        <StatCard
+          title="DÉFICIT CALÓRICO"
+          value={`${deficitPct}%`}
+          sub={`${Math.abs(deficitKcal)} kcal`}
+          color={isDeficit ? "#3DDC84" : "#FF5F5F"}
+          border={isDeficit ? "rgba(61,220,132,0.3)" : "rgba(255,95,95,0.3)"}
+        />
       </div>
 
-      <div className="border border-white/[0.08] bg-surface rounded-md p-5">
-        <div className="font-mono font-semibold text-[11px] tracking-[0.06em] text-white/40 mb-4">
-          ÚLTIMOS 7 DIAS — INGERIDAS VS GASTAS
-        </div>
-        <div className="flex items-end gap-3" style={{ height: 140 }}>
-          {days.map((d, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
-              <div className="flex items-end gap-1" style={{ height: 100 }}>
-                <div
-                  className="w-3 rounded-t-[2px] bg-accent"
-                  style={{ height: `${(d.in / maxKcal) * 100}%` }}
-                  title={`ingeridas: ${d.in}`}
-                />
-                <div
-                  className="w-3 rounded-t-[2px] bg-[#36CFC9]"
-                  style={{ height: `${(d.out / maxKcal) * 100}%` }}
-                  title={`gastas: ${d.out}`}
-                />
-              </div>
-              <span className="font-mono text-[9px] text-white/35 uppercase">{d.label}</span>
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1.2fr" }}>
+        <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.06em", color: "rgba(244,244,242,0.4)" }}>
+            COMPOSIÇÃO CORPORAL
+          </div>
+          <div style={{ display: "flex", gap: 16, alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 150, height: 220, flexShrink: 0, position: "relative", background: "radial-gradient(ellipse at center, rgba(10,30,45,0.9), #060A10 72%)", borderRadius: 8, overflow: "hidden" }}>
+              <svg viewBox="0 0 100 220" style={{ width: "100%", height: "100%" }}>
+                <defs>
+                  <filter id="hologlow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="1.8" result="blur" />
+                    <feMerge><feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                  </filter>
+                  <linearGradient id="beamFade" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#36CFC9" stopOpacity={0} />
+                    <stop offset="15%" stopColor="#36CFC9" stopOpacity={0.5} />
+                    <stop offset="85%" stopColor="#36CFC9" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#36CFC9" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <line x1={15} y1={0} x2={15} y2={220} stroke="url(#beamFade)" strokeWidth={0.9} />
+                <line x1={32} y1={0} x2={32} y2={220} stroke="url(#beamFade)" strokeWidth={0.6} />
+                <line x1={50} y1={0} x2={50} y2={220} stroke="url(#beamFade)" strokeWidth={1.1} />
+                <line x1={68} y1={0} x2={68} y2={220} stroke="url(#beamFade)" strokeWidth={0.6} />
+                <line x1={85} y1={0} x2={85} y2={220} stroke="url(#beamFade)" strokeWidth={0.9} />
+                <g filter="url(#hologlow)">
+                  <circle cx={50} cy={15} r={12} fill="rgba(54,207,201,0.12)" stroke="#7FE3DE" strokeWidth={1.2} />
+                  <path d="M44,28 L29,36 L22,54 L19,84 L20,112 L17,123 L23,128 L27,118 L29,107 L31,82 L34,60 L36,80 L34,101 L29,131 L28,161 L27,187 L28,204 L35,204 L37,161 L40,118 L50,109 L60,118 L63,161 L65,204 L72,204 L73,187 L72,161 L71,131 L66,101 L64,80 L66,60 L69,82 L71,107 L73,118 L77,128 L83,123 L80,112 L81,84 L78,54 L71,36 L56,28 Z" fill="rgba(54,207,201,0.12)" stroke="#7FE3DE" strokeWidth={1} strokeLinejoin="round" />
+                  <path d="M36,80 L64,80 L66,101 L64,131 L36,131 L34,101 Z" fill="#F54E00" opacity={0.4} />
+                  <ellipse cx={27} cy={207} rx={6.5} ry={3.2} fill="rgba(54,207,201,0.18)" stroke="#7FE3DE" strokeWidth={0.9} />
+                  <ellipse cx={73} cy={207} rx={6.5} ry={3.2} fill="rgba(54,207,201,0.18)" stroke="#7FE3DE" strokeWidth={0.9} />
+                </g>
+                <ellipse cx={50} cy={30} rx={36} ry={4} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
+                <ellipse cx={50} cy={65} rx={34} ry={4} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
+                <ellipse cx={50} cy={100} rx={30} ry={4} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
+                <ellipse cx={50} cy={140} rx={26} ry={3.5} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
+                <ellipse cx={50} cy={180} rx={20} ry={3} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
+              </svg>
             </div>
-          ))}
+          </div>
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+            <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
+              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>GORDURA CORPORAL</div>
+              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#36CFC9" }}>{body?.body_fat_pct ?? "—"}%</div>
+            </div>
+            <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
+              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>MASSA MAGRA</div>
+              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#8B7CF6" }}>{body?.lean_mass_kg ?? "—"} kg</div>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowBodyForm((s) => !s)}
+            className="font-mono font-semibold text-[10px] text-white/40 hover:text-accent transition-colors text-left"
+          >
+            {showBodyForm ? "fechar" : "+ registar peso de hoje"}
+          </button>
+          {showBodyForm && (
+            <form onSubmit={saveBody} className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="peso kg" type="number" step="0.1"
+                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
+                <input value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} placeholder="gordura %" type="number" step="0.1"
+                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
+                <input value={leanMass} onChange={(e) => setLeanMass(e.target.value)} placeholder="magra kg" type="number" step="0.1"
+                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
+              </div>
+              <button type="submit" disabled={savingBody} className="px-3 py-1.5 bg-accent border-none rounded text-bg font-mono font-bold text-[10px] disabled:opacity-50">
+                {savingBody ? "…" : "GRAVAR"}
+              </button>
+            </form>
+          )}
         </div>
-        <div className="flex gap-4 mt-3 font-mono text-[11px] text-white/50">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-[1px] bg-accent inline-block" /> ingeridas
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-[1px] bg-[#36CFC9] inline-block" /> gastas
-          </span>
+
+        <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 20 }}>
+          <div style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.06em", color: "rgba(244,244,242,0.4)", marginBottom: 10 }}>
+            INGERIDAS VS GASTAS · 7 DIAS
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 150 }}>
+            {days.map((d, i) => (
+              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", gap: 4, height: "100%" }}>
+                <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 2, width: "100%", justifyContent: "center" }}>
+                  <div style={{ width: 8, borderRadius: "2px 2px 0 0", background: "#F54E00", height: Math.max(4, (d.in / maxCal) * 120) }} />
+                  <div style={{ width: 8, borderRadius: "2px 2px 0 0", background: "#36CFC9", height: Math.max(4, (d.out / maxCal) * 120) }} />
+                </div>
+                <span style={{ font: "600 9px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>{d.label}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 16, marginTop: 12, font: "500 11px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.5)" }}>
+            <span><span style={{ display: "inline-block", width: 8, height: 8, background: "#F54E00", borderRadius: 1, marginRight: 6 }} />Ingeridas</span>
+            <span><span style={{ display: "inline-block", width: 8, height: 8, background: "#36CFC9", borderRadius: 1, marginRight: 6 }} />Gastas</span>
+          </div>
         </div>
       </div>
 
-      <div className="border border-white/[0.08] bg-surface rounded-md p-5 flex flex-col gap-3">
-        <div className="font-mono font-semibold text-[11px] tracking-[0.06em] text-white/40">
-          CALCULADORA DE CALORIAS (FOTO)
+      <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, overflow: "hidden" }}>
+        <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)", font: "700 13px Inter,sans-serif" }}>
+          Refeições e treinos de hoje
         </div>
+        {(!logs || logs.length === 0) && (
+          <div className="px-[18px] py-4 text-[12.5px] text-white/35 font-sans">nada registado ainda</div>
+        )}
+        {logs?.map((l) => {
+          const c = SOURCE_COLORS[l.source] || "rgba(244,244,242,0.4)";
+          return (
+            <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <span style={{ font: "600 10px 'JetBrains Mono',monospace", letterSpacing: "0.03em", padding: "3px 8px", borderRadius: 3, flexShrink: 0, color: c, background: `${c}1a`, border: `1px solid ${c}40` }}>
+                {l.source.charAt(0).toUpperCase() + l.source.slice(1)}
+              </span>
+              <span style={{ flex: 1, font: "500 13px Inter,sans-serif" }}>{l.label}</span>
+              <span style={{ font: "500 11px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>
+                {new Date(l.created_at).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: l.type === "in" ? "#F54E00" : "#36CFC9", width: 80, textAlign: "right" }}>
+                {l.type === "in" ? "+" : "−"}{l.kcal} kcal
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 18, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <input
           ref={fileRef}
           type="file"
@@ -249,139 +337,21 @@ export default function NutricaoPage() {
           disabled={analyzing}
           className="text-[12.5px] text-white/60 file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:font-mono file:font-bold file:text-[11px] file:bg-accent file:text-bg"
         />
-        {analyzing && <div className="font-mono text-[11.5px] text-white/50">a analisar a foto…</div>}
-      </div>
-
-      <form onSubmit={addManual} className="border border-white/[0.08] bg-surface rounded-md p-5 flex flex-col gap-2.5">
-        <div className="font-mono font-semibold text-[11px] tracking-[0.06em] text-white/40">
-          ADICIONAR MANUALMENTE
-        </div>
-        <div className="flex gap-2">
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="Descrição"
-            className="flex-1 bg-bg border border-white/10 rounded px-3 py-2 text-[13px] outline-none focus:border-accent"
-          />
-          <input
-            value={kcal}
-            onChange={(e) => setKcal(e.target.value)}
-            placeholder="kcal"
-            type="number"
-            className="w-24 bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent"
-          />
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as "in" | "out")}
-            className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] outline-none"
-          >
+        {analyzing && <span className="font-mono text-[11.5px] text-white/50">a analisar…</span>}
+        <form onSubmit={addManual} className="flex gap-2 flex-1 min-w-[280px]">
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Descrição"
+            className="flex-1 bg-bg border border-white/10 rounded px-3 py-2 text-[13px] outline-none focus:border-accent" />
+          <input value={kcal} onChange={(e) => setKcal(e.target.value)} placeholder="kcal" type="number"
+            className="w-20 bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent" />
+          <select value={type} onChange={(e) => setType(e.target.value as "in" | "out")}
+            className="bg-bg border border-white/10 rounded px-2 py-2 text-[12px] outline-none">
             <option value="in">ingerida</option>
             <option value="out">gasta</option>
           </select>
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-4 py-2 bg-accent border-none rounded text-bg font-mono font-bold text-[11px] disabled:opacity-50"
-          >
+          <button type="submit" disabled={saving} className="px-3.5 py-2 bg-accent border-none rounded text-bg font-mono font-bold text-[11px] disabled:opacity-50">
             {saving ? "…" : "ADICIONAR"}
           </button>
-        </div>
-      </form>
-
-      <div className="border border-white/[0.08] bg-surface rounded-md overflow-hidden">
-        <div className="px-[18px] py-[14px] border-b border-white/[0.08] font-sans font-bold text-[13px]">
-          Registo de hoje
-        </div>
-        <div className="flex flex-col">
-          {(!logs || logs.length === 0) && (
-            <div className="px-[18px] py-4 text-[12.5px] text-white/35 font-sans">nada registado ainda</div>
-          )}
-          {logs?.map((l) => (
-            <div
-              key={l.id}
-              className="flex items-center gap-3 px-[18px] py-[13px] border-b border-white/[0.05] last:border-none"
-            >
-              <span
-                className="font-mono font-semibold text-[10px] px-2 py-[2px] rounded flex-none"
-                style={{
-                  background: l.type === "in" ? "rgba(245,78,0,0.15)" : "rgba(54,207,201,0.15)",
-                  color: l.type === "in" ? "#F54E00" : "#36CFC9",
-                }}
-              >
-                {l.type === "in" ? "INGERIDA" : "GASTA"}
-              </span>
-              <span className="flex-1 min-w-0 font-sans font-medium text-[13px] truncate">{l.label}</span>
-              <span className="font-mono text-[11px] text-white/35">{l.source}</span>
-              <span className="font-mono font-bold text-[13px] w-[70px] text-right">{l.kcal} kcal</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-        <form onSubmit={saveBody} className="border border-white/[0.08] bg-surface rounded-md p-5 flex flex-col gap-2.5">
-          <div className="font-mono font-semibold text-[11px] tracking-[0.06em] text-white/40">
-            COMPOSIÇÃO CORPORAL — HOJE
-          </div>
-          <div className="flex gap-2">
-            <div className="flex-1 flex flex-col gap-1">
-              <label className="font-mono text-[10px] text-white/35">peso (kg)</label>
-              <input
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                type="number"
-                step="0.1"
-                className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent"
-              />
-            </div>
-            <div className="flex-1 flex flex-col gap-1">
-              <label className="font-mono text-[10px] text-white/35">gordura %</label>
-              <input
-                value={bodyFat}
-                onChange={(e) => setBodyFat(e.target.value)}
-                type="number"
-                step="0.1"
-                className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent"
-              />
-            </div>
-            <div className="flex-1 flex flex-col gap-1">
-              <label className="font-mono text-[10px] text-white/35">massa magra (kg)</label>
-              <input
-                value={leanMass}
-                onChange={(e) => setLeanMass(e.target.value)}
-                type="number"
-                step="0.1"
-                className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent"
-              />
-            </div>
-          </div>
-          <button
-            type="submit"
-            disabled={savingBody}
-            className="px-4 py-2 bg-accent border-none rounded text-bg font-mono font-bold text-[11px] disabled:opacity-50"
-          >
-            {savingBody ? "…" : "GRAVAR"}
-          </button>
         </form>
-
-        <div className="border border-white/[0.08] bg-surface rounded-md p-5">
-          <div className="font-mono font-semibold text-[11px] tracking-[0.06em] text-white/40 mb-3">
-            EVOLUÇÃO (últimos registos)
-          </div>
-          {(!bodyHistory || bodyHistory.length === 0) && (
-            <div className="text-[12.5px] text-white/35 font-sans">sem registos ainda</div>
-          )}
-          <div className="flex flex-col gap-1.5">
-            {bodyHistory?.map((b) => (
-              <div key={b.id} className="flex items-center gap-3 text-[12px] font-mono">
-                <span className="text-white/40 w-[76px] flex-none">{b.date}</span>
-                <span className="text-white">{b.weight_kg ?? "—"} kg</span>
-                <span className="text-white/50">{b.body_fat_pct ?? "—"}% gordura</span>
-                <span className="text-white/50">{b.lean_mass_kg ?? "—"} kg magra</span>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
