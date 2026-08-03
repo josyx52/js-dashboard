@@ -11,6 +11,14 @@ interface NutritionLog {
   source: string;
 }
 
+interface BodyEntry {
+  id: string;
+  date: string;
+  weight_kg: number | null;
+  body_fat_pct: number | null;
+  lean_mass_kg: number | null;
+}
+
 function todayRange() {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -24,6 +32,12 @@ export default function NutricaoPage() {
   const [weekLogs, setWeekLogs] = useState<NutritionLog[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+
+  const [bodyHistory, setBodyHistory] = useState<BodyEntry[] | null>(null);
+  const [weight, setWeight] = useState("");
+  const [bodyFat, setBodyFat] = useState("");
+  const [leanMass, setLeanMass] = useState("");
+  const [savingBody, setSavingBody] = useState(false);
 
   const [label, setLabel] = useState("");
   const [kcal, setKcal] = useState("");
@@ -55,6 +69,37 @@ export default function NutricaoPage() {
       .select("*")
       .gte("created_at", weekAgo.toISOString());
     setWeekLogs((wk as NutritionLog[]) || []);
+
+    const { data: body } = await supabase
+      .from("body_composition")
+      .select("*")
+      .order("date", { ascending: false })
+      .limit(14);
+    setBodyHistory((body as BodyEntry[]) || []);
+  }
+
+  async function saveBody(e: React.FormEvent) {
+    e.preventDefault();
+    if (!weight && !bodyFat && !leanMass) return;
+    setSavingBody(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const { error } = await supabase.from("body_composition").upsert(
+      {
+        date: today,
+        weight_kg: weight ? parseFloat(weight) : null,
+        body_fat_pct: bodyFat ? parseFloat(bodyFat) : null,
+        lean_mass_kg: leanMass ? parseFloat(leanMass) : null,
+      },
+      { onConflict: "user_id,date" }
+    );
+    setSavingBody(false);
+    if (error) setError(error.message);
+    else {
+      setWeight("");
+      setBodyFat("");
+      setLeanMass("");
+      await load();
+    }
   }
 
   async function addManual(e: React.FormEvent) {
@@ -270,6 +315,72 @@ export default function NutricaoPage() {
               <span className="font-mono font-bold text-[13px] w-[70px] text-right">{l.kcal} kcal</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <form onSubmit={saveBody} className="border border-white/[0.08] bg-surface rounded-md p-5 flex flex-col gap-2.5">
+          <div className="font-mono font-semibold text-[11px] tracking-[0.06em] text-white/40">
+            COMPOSIÇÃO CORPORAL — HOJE
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1 flex flex-col gap-1">
+              <label className="font-mono text-[10px] text-white/35">peso (kg)</label>
+              <input
+                value={weight}
+                onChange={(e) => setWeight(e.target.value)}
+                type="number"
+                step="0.1"
+                className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent"
+              />
+            </div>
+            <div className="flex-1 flex flex-col gap-1">
+              <label className="font-mono text-[10px] text-white/35">gordura %</label>
+              <input
+                value={bodyFat}
+                onChange={(e) => setBodyFat(e.target.value)}
+                type="number"
+                step="0.1"
+                className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent"
+              />
+            </div>
+            <div className="flex-1 flex flex-col gap-1">
+              <label className="font-mono text-[10px] text-white/35">massa magra (kg)</label>
+              <input
+                value={leanMass}
+                onChange={(e) => setLeanMass(e.target.value)}
+                type="number"
+                step="0.1"
+                className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={savingBody}
+            className="px-4 py-2 bg-accent border-none rounded text-bg font-mono font-bold text-[11px] disabled:opacity-50"
+          >
+            {savingBody ? "…" : "GRAVAR"}
+          </button>
+        </form>
+
+        <div className="border border-white/[0.08] bg-surface rounded-md p-5">
+          <div className="font-mono font-semibold text-[11px] tracking-[0.06em] text-white/40 mb-3">
+            EVOLUÇÃO (últimos registos)
+          </div>
+          {(!bodyHistory || bodyHistory.length === 0) && (
+            <div className="text-[12.5px] text-white/35 font-sans">sem registos ainda</div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            {bodyHistory?.map((b) => (
+              <div key={b.id} className="flex items-center gap-3 text-[12px] font-mono">
+                <span className="text-white/40 w-[76px] flex-none">{b.date}</span>
+                <span className="text-white">{b.weight_kg ?? "—"} kg</span>
+                <span className="text-white/50">{b.body_fat_pct ?? "—"}% gordura</span>
+                <span className="text-white/50">{b.lean_mass_kg ?? "—"} kg magra</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

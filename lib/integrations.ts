@@ -94,3 +94,39 @@ export async function fetchCalendarEvents(timeMin: string, timeMax: string): Pro
     end: e.end?.dateTime || e.end?.date,
   }));
 }
+
+export async function addCalendarEvent(
+  summary: string,
+  start: string,
+  end: string,
+  reminderMinutes?: number
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const token = await googleAccessToken();
+  if (!token) return { ok: false, error: "sem acesso ao Google Calendar" };
+  const body: any = { summary, start: { dateTime: start }, end: { dateTime: end } };
+  if (reminderMinutes) {
+    body.reminders = { useDefault: false, overrides: [{ method: "popup", minutes: reminderMinutes }] };
+  }
+  const r = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j: any = await r.json();
+  if (!r.ok) return { ok: false, error: JSON.stringify(j) };
+  return { ok: true, id: j.id };
+}
+
+export async function deleteCalendarEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
+  const token = await googleAccessToken();
+  if (!token) return { ok: false, error: "sem acesso ao Google Calendar" };
+  const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok && r.status !== 410) {
+    const j = await r.json().catch(() => ({}));
+    return { ok: false, error: JSON.stringify(j) };
+  }
+  return { ok: true };
+}
