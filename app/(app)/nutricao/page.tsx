@@ -328,15 +328,24 @@ export default function NutricaoPage() {
       </div>
 
       <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 18, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={onPhoto}
-          disabled={analyzing}
-          className="text-[12.5px] text-white/60 file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:font-mono file:font-bold file:text-[11px] file:bg-accent file:text-bg"
-        />
+        <label
+          style={{ width: 38, height: 38, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 6, cursor: analyzing ? "default" : "pointer", opacity: analyzing ? 0.5 : 1 }}
+        >
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={onPhoto}
+            disabled={analyzing}
+            style={{ display: "none" }}
+          />
+          <svg viewBox="0 0 24 24" style={{ width: 16, height: 16 }}>
+            <line x1={12} y1={15} x2={12} y2={4} stroke="#F54E00" strokeWidth={1.8} strokeLinecap="round" />
+            <polyline points="7,9 12,4 17,9" fill="none" stroke="#F54E00" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+            <line x1={5} y1={19} x2={19} y2={19} stroke="#F54E00" strokeWidth={1.8} strokeLinecap="round" />
+          </svg>
+        </label>
         {analyzing && <span className="font-mono text-[11.5px] text-white/50">a analisar…</span>}
         <form onSubmit={addManual} className="flex gap-2 flex-1 min-w-[280px]">
           <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Descrição"
