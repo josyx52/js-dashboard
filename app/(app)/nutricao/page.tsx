@@ -155,12 +155,12 @@ export default function NutricaoPage() {
     }
   }
 
-  const basal = 1500;
   const caloriesIn = (logs || []).filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0);
-  const caloriesOutActivity = (logs || []).filter((l) => l.type === "out").reduce((s, l) => s + Number(l.kcal), 0);
-  const caloriesOut = basal + caloriesOutActivity;
+  const outLogs = (logs || []).filter((l) => l.type === "out");
+  const caloriesOut = outLogs.reduce((s, l) => s + Number(l.kcal), 0);
+  const hasRealDeficitData = outLogs.length > 0 && caloriesIn > 0;
   const deficitKcal = caloriesOut - caloriesIn;
-  const deficitPct = caloriesOut > 0 ? Math.round((deficitKcal / caloriesOut) * 100) : 0;
+  const deficitPct = hasRealDeficitData && caloriesOut > 0 ? Math.round((deficitKcal / caloriesOut) * 100) : null;
   const isDeficit = deficitKcal >= 0;
   const mealCount = (logs || []).filter((l) => l.type === "in").length;
   const body = bodyHistory?.[0];
@@ -201,14 +201,19 @@ export default function NutricaoPage() {
           value={steps === undefined ? "…" : steps === null ? "—" : steps.toLocaleString("pt-PT")}
           sub={steps ? "hoje" : "sem dados ainda — configura o Tasker"}
         />
-        <StatCard title="CALORIAS GASTAS" value={String(caloriesOut)} sub="basal + treino" color="#36CFC9" />
+        <StatCard
+          title="CALORIAS GASTAS"
+          value={outLogs.length === 0 ? "—" : String(caloriesOut)}
+          sub={outLogs.length === 0 ? "sem treinos registados" : "treino registado (sem basal)"}
+          color="#36CFC9"
+        />
         <StatCard title="CALORIAS INGERIDAS" value={String(caloriesIn)} sub={`${mealCount} refeições`} color="#F54E00" />
         <StatCard
           title="DÉFICIT CALÓRICO"
-          value={`${deficitPct}%`}
-          sub={`${Math.abs(deficitKcal)} kcal`}
-          color={isDeficit ? "#3DDC84" : "#FF5F5F"}
-          border={isDeficit ? "rgba(61,220,132,0.3)" : "rgba(255,95,95,0.3)"}
+          value={deficitPct === null ? "—" : `${deficitPct}%`}
+          sub={deficitPct === null ? "precisa de basal (não calculado)" : `${Math.abs(deficitKcal)} kcal`}
+          color={deficitPct === null ? undefined : isDeficit ? "#3DDC84" : "#FF5F5F"}
+          border={deficitPct === null ? undefined : isDeficit ? "rgba(61,220,132,0.3)" : "rgba(255,95,95,0.3)"}
         />
       </div>
 
