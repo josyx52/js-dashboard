@@ -69,19 +69,20 @@ async function googleAccessToken(): Promise<string | null> {
   return j.access_token || null;
 }
 
-async function fitbitAccessToken(): Promise<string | null> {
-  const clientId = process.env.FITBIT_CLIENT_ID;
-  const clientSecret = process.env.FITBIT_CLIENT_SECRET;
-  const refreshToken = process.env.FITBIT_REFRESH_TOKEN;
+async function googleHealthAccessToken(): Promise<string | null> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_HEALTH_REFRESH_TOKEN;
   if (!clientId || !clientSecret || !refreshToken) return null;
-  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-  const r = await fetch("https://api.fitbit.com/oauth2/token", {
+  const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
-    headers: {
-      Authorization: `Basic ${basic}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
   });
   if (!r.ok) return null;
   const j: any = await r.json();
@@ -89,14 +90,24 @@ async function fitbitAccessToken(): Promise<string | null> {
 }
 
 export async function fetchFitbitSteps(date: string): Promise<number | null> {
-  const token = await fitbitAccessToken();
+  const token = await googleHealthAccessToken();
   if (!token) return null;
-  const r = await fetch(`https://api.fitbit.com/1/user/-/activities/date/${date}.json`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const [year, month, day] = date.split("-").map(Number);
+  const r = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints:dailyRollUp", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      range: {
+        start: { date: { year, month, day }, time: { hours: 0, minutes: 0, seconds: 0, nanos: 0 } },
+        end: { date: { year, month, day }, time: { hours: 23, minutes: 59, seconds: 59, nanos: 0 } },
+      },
+      windowSizeDays: 1,
+    }),
   });
   if (!r.ok) return null;
   const j: any = await r.json();
-  return j.summary?.steps ?? null;
+  const total = j.rollupDataPoints?.[0]?.steps?.countSum;
+  return total ? parseInt(total, 10) : null;
 }
 
 export interface RawEvent {
