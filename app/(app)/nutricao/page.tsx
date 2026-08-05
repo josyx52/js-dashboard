@@ -326,30 +326,6 @@ export default function NutricaoPage() {
           );
         })}
       </div>
-
-      <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 18, display: "flex", alignItems: "center", gap: 14 }}>
-        <label
-          style={{ width: 38, height: 38, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 6, cursor: analyzing ? "default" : "pointer", opacity: analyzing ? 0.5 : 1 }}
-        >
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={onPhoto}
-            disabled={analyzing}
-            style={{ display: "none" }}
-          />
-          <svg viewBox="0 0 24 24" style={{ width: 16, height: 16 }}>
-            <line x1={12} y1={15} x2={12} y2={4} stroke="#F54E00" strokeWidth={1.8} strokeLinecap="round" />
-            <polyline points="7,9 12,4 17,9" fill="none" stroke="#F54E00" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-            <line x1={5} y1={19} x2={19} y2={19} stroke="#F54E00" strokeWidth={1.8} strokeLinecap="round" />
-          </svg>
-        </label>
-        <span style={{ font: "500 12.5px Inter,sans-serif", color: "rgba(244,244,242,0.4)" }}>
-          {analyzing ? "a analisar…" : "Enviar foto do prato"}
-        </span>
-      </div>
     </div>
   );
 }
