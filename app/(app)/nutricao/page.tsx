@@ -327,7 +327,7 @@ export default function NutricaoPage() {
         })}
       </div>
 
-      <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 18, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 18, display: "flex", alignItems: "center", gap: 14 }}>
         <label
           style={{ width: 38, height: 38, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 6, cursor: analyzing ? "default" : "pointer", opacity: analyzing ? 0.5 : 1 }}
         >
@@ -346,21 +346,9 @@ export default function NutricaoPage() {
             <line x1={5} y1={19} x2={19} y2={19} stroke="#F54E00" strokeWidth={1.8} strokeLinecap="round" />
           </svg>
         </label>
-        {analyzing && <span className="font-mono text-[11.5px] text-white/50">a analisar…</span>}
-        <form onSubmit={addManual} className="flex gap-2 flex-1 min-w-[280px]">
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Descrição"
-            className="flex-1 bg-bg border border-white/10 rounded px-3 py-2 text-[13px] outline-none focus:border-accent" />
-          <input value={kcal} onChange={(e) => setKcal(e.target.value)} placeholder="kcal" type="number"
-            className="w-20 bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent" />
-          <select value={type} onChange={(e) => setType(e.target.value as "in" | "out")}
-            className="bg-bg border border-white/10 rounded px-2 py-2 text-[12px] outline-none">
-            <option value="in">ingerida</option>
-            <option value="out">gasta</option>
-          </select>
-          <button type="submit" disabled={saving} className="px-3.5 py-2 bg-accent border-none rounded text-bg font-mono font-bold text-[11px] disabled:opacity-50">
-            {saving ? "…" : "ADICIONAR"}
-          </button>
-        </form>
+        <span style={{ font: "500 12.5px Inter,sans-serif", color: "rgba(244,244,242,0.4)" }}>
+          {analyzing ? "a analisar…" : "Enviar foto do prato"}
+        </span>
       </div>
     </div>
   );
