@@ -69,6 +69,36 @@ async function googleAccessToken(): Promise<string | null> {
   return j.access_token || null;
 }
 
+async function fitbitAccessToken(): Promise<string | null> {
+  const clientId = process.env.FITBIT_CLIENT_ID;
+  const clientSecret = process.env.FITBIT_CLIENT_SECRET;
+  const refreshToken = process.env.FITBIT_REFRESH_TOKEN;
+  if (!clientId || !clientSecret || !refreshToken) return null;
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  const r = await fetch("https://api.fitbit.com/oauth2/token", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+  });
+  if (!r.ok) return null;
+  const j: any = await r.json();
+  return j.access_token || null;
+}
+
+export async function fetchFitbitSteps(date: string): Promise<number | null> {
+  const token = await fitbitAccessToken();
+  if (!token) return null;
+  const r = await fetch(`https://api.fitbit.com/1/user/-/activities/date/${date}.json`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return null;
+  const j: any = await r.json();
+  return j.summary?.steps ?? null;
+}
+
 export interface RawEvent {
   id: string;
   summary: string;
