@@ -36,6 +36,7 @@ export default function NutricaoPage() {
   const [analyzing, setAnalyzing] = useState(false);
 
   const [bodyHistory, setBodyHistory] = useState<BodyEntry[] | null>(null);
+  const [steps, setSteps] = useState<number | null | undefined>(undefined);
   const [weight, setWeight] = useState("");
   const [bodyFat, setBodyFat] = useState("");
   const [leanMass, setLeanMass] = useState("");
@@ -54,6 +55,7 @@ export default function NutricaoPage() {
   }, []);
 
   async function load() {
+    fetch("/api/steps").then((r) => r.json()).then((d) => setSteps(d.steps ?? null)).catch(() => setSteps(null));
     const { start, end } = todayRange();
     const { data, error } = await supabase
       .from("nutrition_logs")
@@ -194,7 +196,11 @@ export default function NutricaoPage() {
       )}
 
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-        <StatCard title="PASSOS" value="—" sub="sem integração ligada" />
+        <StatCard
+          title="PASSOS"
+          value={steps === undefined ? "…" : steps === null ? "—" : steps.toLocaleString("pt-PT")}
+          sub={steps ? "hoje" : "sem dados ainda — configura o Tasker"}
+        />
         <StatCard title="CALORIAS GASTAS" value={String(caloriesOut)} sub="basal + treino" color="#36CFC9" />
         <StatCard title="CALORIAS INGERIDAS" value={String(caloriesIn)} sub={`${mealCount} refeições`} color="#F54E00" />
         <StatCard
