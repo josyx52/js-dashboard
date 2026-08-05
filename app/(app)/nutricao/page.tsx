@@ -170,7 +170,7 @@ export default function NutricaoPage() {
     const key = d.toISOString().slice(0, 10);
     const dayLogs = (weekLogs || []).filter((l) => l.created_at.slice(0, 10) === key);
     days.push({
-      label: d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3).toUpperCase(),
+      label: i === 0 ? "HOJE" : d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3).toUpperCase(),
       in: i === 0 ? caloriesIn : dayLogs.filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0),
       out: dayLogs.filter((l) => l.type === "out").reduce((s, l) => s + Number(l.kcal), 0),
     });
