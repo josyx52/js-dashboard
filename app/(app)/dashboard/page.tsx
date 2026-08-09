@@ -159,7 +159,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1.3fr 1fr" }}>
+      <div className="grid grid-cols-1 lg:[grid-template-columns:1.3fr_1fr] gap-4">
         <LineChartCard
           todoist={[todoistOverdue, todoistToday]}
           ticktick={[ticktickOverdue, ticktickToday]}
@@ -167,7 +167,7 @@ export default function DashboardPage() {
         <DonutCard overdue={overdueRows.length} today={todayRows.length} />
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TaskListCard
           title="Atrasadas"
           items={overdueRows.map(toListItem)}

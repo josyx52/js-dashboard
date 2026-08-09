@@ -217,7 +217,7 @@ export default function NutricaoPage() {
         />
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1.2fr" }}>
+      <div className="grid grid-cols-1 lg:[grid-template-columns:1fr_1.2fr] gap-4">
         <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.06em", color: "rgba(244,244,242,0.4)" }}>
             COMPOSIÇÃO CORPORAL

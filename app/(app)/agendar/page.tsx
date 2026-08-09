@@ -189,7 +189,7 @@ export default function AgendarPage() {
         </form>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, overflowX: "auto" }} className="lg:grid" >
         {days.map((d) => {
           const iso = isoDate(d);
           const isToday = iso === todayIso;
@@ -200,6 +200,7 @@ export default function AgendarPage() {
                 border: `1px solid ${isToday ? "#F54E00" : "rgba(255,255,255,0.08)"}`,
                 background: isToday ? "rgba(245,78,0,0.12)" : "#14161B",
                 borderRadius: 6, padding: "14px 8px", textAlign: "center",
+                minWidth: 64, flex: "1 0 64px",
               }}
             >
               <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: isToday ? "#F54E00" : "rgba(244,244,242,0.4)", marginBottom: 4 }}>
