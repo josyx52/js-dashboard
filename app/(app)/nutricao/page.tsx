@@ -19,6 +19,18 @@ interface BodyEntry {
   lean_mass_kg: number | null;
 }
 
+interface Profile {
+  height_cm: number | null;
+  age: number | null;
+  sex: "m" | "f" | null;
+}
+
+// Mifflin-St Jeor — formula clinica padrao para metabolismo basal (BMR)
+function calcBMR(weightKg: number, heightCm: number, age: number, sex: "m" | "f") {
+  const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
+  return Math.round(sex === "m" ? base + 5 : base - 161);
+}
+
 const SOURCE_COLORS: Record<string, string> = { foto: "#F54E00", manual: "#36CFC9", treino: "#8B7CF6" };
 
 function todayRange() {
@@ -42,6 +54,12 @@ export default function NutricaoPage() {
   const [leanMass, setLeanMass] = useState("");
   const [savingBody, setSavingBody] = useState(false);
   const [showBodyForm, setShowBodyForm] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [heightInput, setHeightInput] = useState("");
+  const [ageInput, setAgeInput] = useState("");
+  const [sexInput, setSexInput] = useState<"m" | "f">("m");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const [label, setLabel] = useState("");
   const [kcal, setKcal] = useState("");
@@ -81,6 +99,32 @@ export default function NutricaoPage() {
       .order("date", { ascending: false })
       .limit(1);
     setBodyHistory((body as BodyEntry[]) || []);
+
+    const { data: prof } = await supabase
+      .from("user_profile")
+      .select("height_cm, age, sex")
+      .eq("id", "00000000-0000-0000-0000-000000000001")
+      .maybeSingle();
+    setProfile((prof as Profile) || { height_cm: null, age: null, sex: null });
+  }
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    if (!heightInput || !ageInput) return;
+    setSavingProfile(true);
+    const { error } = await supabase.from("user_profile").upsert({
+      id: "00000000-0000-0000-0000-000000000001",
+      height_cm: parseFloat(heightInput),
+      age: parseInt(ageInput, 10),
+      sex: sexInput,
+      updated_at: new Date().toISOString(),
+    });
+    setSavingProfile(false);
+    if (error) setError(error.message);
+    else {
+      setShowProfileForm(false);
+      await load();
+    }
   }
 
   async function saveBody(e: React.FormEvent) {
@@ -155,15 +199,21 @@ export default function NutricaoPage() {
     }
   }
 
+  const body = bodyHistory?.[0];
+  const bmr =
+    body?.weight_kg && profile?.height_cm && profile?.age && profile?.sex
+      ? calcBMR(body.weight_kg, profile.height_cm, profile.age, profile.sex)
+      : null;
+
   const caloriesIn = (logs || []).filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0);
   const outLogs = (logs || []).filter((l) => l.type === "out");
-  const caloriesOut = outLogs.reduce((s, l) => s + Number(l.kcal), 0);
-  const hasRealDeficitData = outLogs.length > 0 && caloriesIn > 0;
+  const treinoKcal = outLogs.reduce((s, l) => s + Number(l.kcal), 0);
+  const caloriesOut = bmr !== null ? bmr + treinoKcal : treinoKcal;
+  const hasRealDeficitData = (bmr !== null || outLogs.length > 0) && caloriesIn >= 0 && caloriesOut > 0;
   const deficitKcal = caloriesOut - caloriesIn;
-  const deficitPct = hasRealDeficitData && caloriesOut > 0 ? Math.round((deficitKcal / caloriesOut) * 100) : null;
+  const deficitPct = hasRealDeficitData ? Math.round((deficitKcal / caloriesOut) * 100) : null;
   const isDeficit = deficitKcal >= 0;
   const mealCount = (logs || []).filter((l) => l.type === "in").length;
-  const body = bodyHistory?.[0];
 
   const days: { label: string; in: number; out: number }[] = [];
   for (let i = 6; i >= 0; i--) {
@@ -203,8 +253,12 @@ export default function NutricaoPage() {
         />
         <StatCard
           title="CALORIAS GASTAS"
-          value={outLogs.length === 0 ? "—" : String(caloriesOut)}
-          sub={outLogs.length === 0 ? "sem treinos registados" : "treino registado (sem basal)"}
+          value={caloriesOut === 0 ? "—" : String(caloriesOut)}
+          sub={
+            bmr !== null
+              ? `basal ${bmr} + treino ${treinoKcal}`
+              : "define o perfil para basal real"
+          }
           color="#36CFC9"
         />
         <StatCard title="CALORIAS INGERIDAS" value={String(caloriesIn)} sub={`${mealCount} refeições`} color="#F54E00" />
@@ -285,6 +339,30 @@ export default function NutricaoPage() {
               </div>
               <button type="submit" disabled={savingBody} className="px-3 py-1.5 bg-accent border-none rounded text-bg font-mono font-bold text-[10px] disabled:opacity-50">
                 {savingBody ? "…" : "GRAVAR"}
+              </button>
+            </form>
+          )}
+          <button
+            onClick={() => setShowProfileForm((s) => !s)}
+            className="font-mono font-semibold text-[10px] text-white/40 hover:text-accent transition-colors text-left"
+          >
+            {showProfileForm ? "fechar" : profile?.height_cm ? "editar perfil (altura/idade)" : "+ definir perfil (para basal real)"}
+          </button>
+          {showProfileForm && (
+            <form onSubmit={saveProfile} className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input value={heightInput} onChange={(e) => setHeightInput(e.target.value)} placeholder="altura cm" type="number"
+                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
+                <input value={ageInput} onChange={(e) => setAgeInput(e.target.value)} placeholder="idade" type="number"
+                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
+                <select value={sexInput} onChange={(e) => setSexInput(e.target.value as "m" | "f")}
+                  className="bg-bg border border-white/10 rounded px-2 py-1.5 text-[12px] outline-none">
+                  <option value="m">M</option>
+                  <option value="f">F</option>
+                </select>
+              </div>
+              <button type="submit" disabled={savingProfile} className="px-3 py-1.5 bg-accent border-none rounded text-bg font-mono font-bold text-[10px] disabled:opacity-50">
+                {savingProfile ? "…" : "GRAVAR PERFIL"}
               </button>
             </form>
           )}
