@@ -182,7 +182,7 @@ function GtdFlow() {
   async function load() {
     const { data: t } = await supabase.from("tasks_cache").select("*").eq("status", "open").eq("delegable", true);
     setTasks((t as TaskCache[]) || []);
-    const { data: i } = await supabase.from("integrations").select("*");
+    const { data: i } = await supabase.from("integrations").select("id, name, description, connected, capabilities, created_at");
     setIntegrations((i as Integration[]) || []);
   }
 

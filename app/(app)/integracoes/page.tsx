@@ -25,7 +25,7 @@ export default function IntegracoesPage() {
   async function load() {
     const { data, error } = await supabase
       .from("integrations")
-      .select("*")
+      .select("id, name, description, connected, capabilities, created_at")
       .order("created_at", { ascending: false });
     if (error) setError(error.message);
     else setItems(data as Integration[]);

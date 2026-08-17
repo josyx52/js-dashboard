@@ -16,17 +16,28 @@ export async function POST(req: NextRequest) {
     }
 
     const sb = supabaseServer();
+
+    let vaultId: string | null = null;
+    if (api_key) {
+      const { data: vid, error: vaultErr } = await sb.rpc("create_integration_secret", {
+        secret: api_key,
+        secret_name: `integration-${name}-${Date.now()}`,
+      });
+      if (vaultErr) return NextResponse.json({ error: "vault: " + vaultErr.message }, { status: 500 });
+      vaultId = vid;
+    }
+
     const { data, error } = await sb
       .from("integrations")
       .insert({
         user_id: userId,
         name,
         description: description || null,
-        api_key_encrypted: api_key || null, // TODO: mover para Supabase Vault
+        api_key_vault_id: vaultId,
         connected: false,
         capabilities: [],
       })
-      .select()
+      .select("id, name, description, connected, capabilities, created_at")
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
