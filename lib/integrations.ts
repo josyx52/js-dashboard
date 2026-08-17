@@ -25,6 +25,23 @@ export async function fetchTodoist(): Promise<RawTask[]> {
   return out;
 }
 
+// Cria uma tarefa real no Todoist — usada pela execucao real da delegacao GTD.
+// Marca com o rotulo "delegada-agente" para se distinguir de tarefas normais.
+export async function addTodoistTask(
+  content: string
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const token = process.env.TODOIST_API_TOKEN;
+  if (!token) return { ok: false, error: "TODOIST_API_TOKEN nao configurado" };
+  const r = await fetch("https://api.todoist.com/api/v1/tasks", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ content, labels: ["delegada-agente"] }),
+  });
+  const j: any = await r.json();
+  if (!r.ok) return { ok: false, error: JSON.stringify(j) };
+  return { ok: true, id: j.id };
+}
+
 export async function fetchTickTick(): Promise<RawTask[]> {
   const token = process.env.TICKTICK_ACCESS_TOKEN;
   if (!token) return [];

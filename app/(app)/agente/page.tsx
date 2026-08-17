@@ -172,7 +172,7 @@ export default function AgentePage() {
 function GtdFlow() {
   const [tasks, setTasks] = useState<TaskCache[] | null>(null);
   const [integrations, setIntegrations] = useState<Integration[] | null>(null);
-  const [delegated, setDelegated] = useState<{ title: string; status: string }[]>([]);
+  const [delegated, setDelegated] = useState<{ title: string; status: string; note?: string | null }[]>([]);
   const [delegating, setDelegating] = useState<string | null>(null);
 
   useEffect(() => {
@@ -196,7 +196,14 @@ function GtdFlow() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setDelegated((p) => [...p, { title: task.content, status: "EM ANÁLISE" }]);
+      setDelegated((p) => [
+        ...p,
+        {
+          title: task.content,
+          status: data.executed ? "AGENDADO" : "EM ANÁLISE (SIMULADO)",
+          note: data.execution_note,
+        },
+      ]);
       await load();
     } catch (e: any) {
       window.alert("Erro: " + e.message);
@@ -299,16 +306,18 @@ function GtdFlow() {
               <div style={{ font: "500 12px Inter,sans-serif", color: "rgba(244,244,242,0.3)" }}>nada delegado ainda</div>
             )}
             {delegated.map((d, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#0B0C10", border: "1px solid rgba(139,124,246,0.15)", borderRadius: 4, padding: "9px 12px" }}>
-                <span style={{ font: "500 13px Inter,sans-serif", minWidth: 0 }}>{d.title}</span>
-                <span style={{ font: "600 9px 'JetBrains Mono',monospace", color: "#8B7CF6", background: "rgba(139,124,246,0.12)", padding: "2px 6px", borderRadius: 3, flexShrink: 0, whiteSpace: "nowrap" }}>
-                  {d.status}
-                </span>
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, background: "#0B0C10", border: "1px solid rgba(139,124,246,0.15)", borderRadius: 4, padding: "9px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <span style={{ font: "500 13px Inter,sans-serif", minWidth: 0 }}>{d.title}</span>
+                  <span style={{ font: "600 9px 'JetBrains Mono',monospace", color: "#8B7CF6", background: "rgba(139,124,246,0.12)", padding: "2px 6px", borderRadius: 3, flexShrink: 0, whiteSpace: "nowrap" }}>
+                    {d.status}
+                  </span>
+                </div>
+                {d.note && (
+                  <span style={{ font: "500 11px Inter,sans-serif", color: "rgba(244,244,242,0.4)" }}>{d.note}</span>
+                )}
               </div>
             ))}
-            <p style={{ margin: 0, font: "500 11px Inter,sans-serif", color: "rgba(244,244,242,0.35)", lineHeight: 1.5 }}>
-              O agente autoanalisa o que delegar e cria sub-tarefas por conta própria.
-            </p>
           </div>
         </div>
       </div>

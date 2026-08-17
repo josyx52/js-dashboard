@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
+import { addTodoistTask } from "@/lib/integrations";
 
 export const runtime = "nodejs";
 
@@ -53,14 +54,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Execucao real — hoje so implementada para o Todoist, como prova de
+    // conceito. Outras integracoes ficam "em_analise" (simulado), porque
+    // sao arbitrarias e nao temos mapeamento de API para elas.
+    let status: "em_analise" | "agendado" = "em_analise";
+    let executionNote: string | null = null;
+    const integName = (integ.name || "").toLowerCase();
+
+    if (integName.includes("todoist")) {
+      const result = await addTodoistTask(task.content);
+      if (result.ok) {
+        status = "agendado";
+        executionNote = `Tarefa criada no Todoist (id ${result.id}), rotulada 'delegada-agente'.`;
+      } else {
+        executionNote = `Falha ao executar no Todoist: ${result.error}`;
+      }
+    } else {
+      executionNote = "Simulado — esta integracao ainda nao tem execucao real implementada.";
+    }
+
     const { data, error } = await sb
       .from("delegations")
-      .insert({ task_id, integration_id, status: "em_analise" })
+      .insert({ task_id, integration_id, status })
       .select()
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json({ ok: true, delegation: data, chosen_tool: chosenTool });
+    return NextResponse.json({
+      ok: true,
+      delegation: data,
+      chosen_tool: chosenTool,
+      execution_note: executionNote,
+      executed: status === "agendado",
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
   }
