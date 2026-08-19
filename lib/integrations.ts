@@ -2,6 +2,7 @@ export interface RawTask {
   id: string;
   content: string;
   due: string | null;
+  projectId?: string;
 }
 
 export async function fetchTodoist(): Promise<RawTask[]> {
@@ -60,10 +61,42 @@ export async function fetchTickTick(): Promise<RawTask[]> {
         id: `tt-${t.id}`,
         content: t.title,
         due: t.dueDate ? String(t.dueDate).slice(0, 10) : null,
+        projectId: p.id,
       });
     }
   }
   return out;
+}
+
+export async function completeTodoistTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
+  const token = process.env.TODOIST_API_TOKEN;
+  if (!token) return { ok: false, error: "TODOIST_API_TOKEN nao configurado" };
+  const r = await fetch(`https://api.todoist.com/api/v1/tasks/${taskId}/close`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok && r.status !== 204) {
+    const j = await r.json().catch(() => ({}));
+    return { ok: false, error: JSON.stringify(j) };
+  }
+  return { ok: true };
+}
+
+export async function completeTickTickTask(
+  projectId: string,
+  taskId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const token = process.env.TICKTICK_ACCESS_TOKEN;
+  if (!token) return { ok: false, error: "TICKTICK_ACCESS_TOKEN nao configurado" };
+  const r = await fetch(
+    `https://api.ticktick.com/open/v1/project/${projectId}/task/${taskId}/complete`,
+    { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!r.ok && r.status !== 200 && r.status !== 204) {
+    const j = await r.json().catch(() => ({}));
+    return { ok: false, error: JSON.stringify(j) };
+  }
+  return { ok: true };
 }
 
 async function googleAccessToken(): Promise<string | null> {

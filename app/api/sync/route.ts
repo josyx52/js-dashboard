@@ -35,6 +35,7 @@ export async function POST() {
           source: t.source,
           content: t.content,
           due: t.due,
+          source_project_id: t.projectId || null,
           status: "open",
           updated_at: new Date().toISOString(),
         })),

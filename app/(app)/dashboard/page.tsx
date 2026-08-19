@@ -76,7 +76,19 @@ export default function DashboardPage() {
 
   async function completeTask(id: string) {
     setCompletingIds((prev) => new Set(prev).add(id));
-    await supabase.from("tasks_cache").update({ status: "done" }).eq("id", id);
+    try {
+      const res = await fetch("/api/tasks/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_id: id }),
+      });
+      const data = await res.json();
+      if (!data.remote_synced && data.remote_error) {
+        setSyncMsg(`Concluída localmente, mas falhou no app de origem: ${data.remote_error}`);
+      }
+    } catch {
+      // se a rota falhar por completo, ainda assim tenta refletir localmente
+    }
     await load();
     setCompletingIds((prev) => {
       const s = new Set(prev);
