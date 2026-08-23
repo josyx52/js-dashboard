@@ -148,7 +148,7 @@ export default function AgendarPage() {
   };
 
   return (
-    <div className="p-[28px_36px] flex flex-col">
+    <div className="p-4 sm:p-[28px_36px] flex flex-col">
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
         <button
           onClick={() => setShowForm((s) => !s)}

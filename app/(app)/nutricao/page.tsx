@@ -238,7 +238,7 @@ export default function NutricaoPage() {
   );
 
   return (
-    <div className="p-[28px_36px] flex flex-col gap-5">
+    <div className="p-4 sm:p-[28px_36px] flex flex-col gap-5">
       {error && (
         <div className="bg-red-500/10 text-red-400 border border-red-500/30 rounded px-4 py-2 font-mono text-[11.5px]">
           {error}

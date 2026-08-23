@@ -85,7 +85,7 @@ export default function IntegracoesPage() {
 
   if (labFor) {
     return (
-      <div className="p-[28px_36px] max-w-[720px] flex flex-col gap-4">
+      <div className="p-4 sm:p-[28px_36px] max-w-[720px] flex flex-col gap-4">
         <button
           onClick={() => setLabFor(null)}
           className="self-start px-3.5 py-1.5 bg-transparent border border-border rounded text-[11px] font-mono font-semibold text-muted hover:text-lab hover:border-lab/50 transition-colors"
@@ -118,7 +118,7 @@ export default function IntegracoesPage() {
   }
 
   return (
-    <div className="p-[28px_36px] max-w-[720px] flex flex-col gap-3.5">
+    <div className="p-4 sm:p-[28px_36px] max-w-[720px] flex flex-col gap-3.5">
       <div className="flex items-center justify-end gap-2">
         <button
           onClick={() => setShowForm((s) => !s)}
@@ -169,41 +169,43 @@ export default function IntegracoesPage() {
       {items?.map((it) => (
         <div
           key={it.id}
-          className="border border-border bg-surface rounded-md px-5 py-4.5 flex items-center gap-4"
+          className="border border-border bg-surface rounded-md px-4 py-4 sm:px-5 sm:py-4.5 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4"
         >
           <div
             className="w-2 h-2 rounded-full flex-none"
             style={{ background: it.connected ? "#3DDC84" : "rgba(255,255,255,0.25)" }}
           />
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-[140px]">
             <div className="font-bold text-[14px]">{it.name}</div>
             <div className="text-[12px] text-muted mt-0.5">{it.description || "sem descrição"}</div>
           </div>
           <span
-            className="font-mono font-semibold text-[10px] flex-none"
+            className="font-mono font-semibold text-[10px] flex-none order-3 sm:order-none"
             style={{ color: it.connected ? "#3DDC84" : "rgba(244,244,242,0.4)" }}
           >
             {it.connected ? "CONECTADO" : "NÃO CONECTADO"}
           </span>
-          <button
-            onClick={() => toggle(it)}
-            disabled={togglingId === it.id}
-            className="px-3.5 py-1.5 rounded text-[11px] font-mono font-semibold border transition-colors disabled:opacity-50"
-            style={
-              it.connected
-                ? { borderColor: "rgba(255,255,255,0.14)", color: "rgba(244,244,242,0.6)" }
-                : { borderColor: "#F54E00", color: "#F54E00" }
-            }
-          >
-            {togglingId === it.id ? "…" : it.connected ? "DESCONECTAR" : "CONECTAR"}
-          </button>
-          <button
-            onClick={() => openLab(it)}
-            title="Abrir laboratório"
-            className="w-[34px] h-[34px] flex-none flex items-center justify-center bg-transparent border border-lab/40 rounded-md hover:border-lab transition-colors"
-          >
-            <IconFlask className="w-[15px] h-[15px]" color="#8B7CF6" />
-          </button>
+          <div className="flex items-center gap-2 flex-none order-4 sm:order-none ml-auto sm:ml-0">
+            <button
+              onClick={() => toggle(it)}
+              disabled={togglingId === it.id}
+              className="px-3.5 py-1.5 rounded text-[11px] font-mono font-semibold border transition-colors disabled:opacity-50 whitespace-nowrap"
+              style={
+                it.connected
+                  ? { borderColor: "rgba(255,255,255,0.14)", color: "rgba(244,244,242,0.6)" }
+                  : { borderColor: "#F54E00", color: "#F54E00" }
+              }
+            >
+              {togglingId === it.id ? "…" : it.connected ? "DESCONECTAR" : "CONECTAR"}
+            </button>
+            <button
+              onClick={() => openLab(it)}
+              title="Abrir laboratório"
+              className="w-[34px] h-[34px] flex-none flex items-center justify-center bg-transparent border border-lab/40 rounded-md hover:border-lab transition-colors"
+            >
+              <IconFlask className="w-[15px] h-[15px]" color="#8B7CF6" />
+            </button>
+          </div>
         </div>
       ))}
     </div>

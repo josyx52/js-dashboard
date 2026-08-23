@@ -115,7 +115,7 @@ export default function DashboardPage() {
   const ticktickToday = ticktickTasks.length - ticktickOverdue;
 
   return (
-    <div className="flex-1 min-w-0 p-[28px_36px] flex flex-col gap-6">
+    <div className="flex-1 min-w-0 p-4 sm:p-[28px_36px] flex flex-col gap-6">
       <div className="flex items-start justify-between gap-5">
         <div>
           <div className="flex items-center gap-1.5 px-[8px_10px] py-1 bg-[rgba(61,220,132,0.12)] rounded">

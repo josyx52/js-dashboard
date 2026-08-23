@@ -96,7 +96,7 @@ export default function AgentePage() {
   });
 
   return (
-    <div className="flex flex-col h-screen box-border" style={{ padding: "28px 36px" }}>
+    <div className="flex flex-col h-screen box-border p-4 sm:p-[28px_36px]">
       <div style={{ display: "flex", gap: 6, paddingBottom: 0, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         <button onClick={() => setMode("chat")} style={tabStyle(mode === "chat", "#F4F4F2")}>CHAT</button>
         <button onClick={() => setMode("calculadora")} style={tabStyle(mode === "calculadora", "#F54E00")}>CALCULADORA</button>
