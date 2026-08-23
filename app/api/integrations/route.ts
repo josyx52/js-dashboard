@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
+import { validateProviderToken } from "@/lib/integrations";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,20 @@ export async function POST(req: NextRequest) {
     const { name, api_key, description } = body;
     if (!name) {
       return NextResponse.json({ error: "nome obrigatorio" }, { status: 400 });
+    }
+
+    let validationNote: string | null = null;
+    if (api_key) {
+      const check = await validateProviderToken(name, api_key);
+      if (check.recognized && !check.valid) {
+        return NextResponse.json(
+          { error: `API key invalida para ${name}: ${check.error || "rejeitada pelo provedor"}` },
+          { status: 400 }
+        );
+      }
+      if (!check.recognized) {
+        validationNote = "integracao nao reconhecida — a API key nao foi validada contra nenhum provedor";
+      }
     }
 
     const sb = supabaseServer();
@@ -41,7 +56,7 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, integration: data });
+    return NextResponse.json({ ok: true, integration: data, validation_note: validationNote });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
   }

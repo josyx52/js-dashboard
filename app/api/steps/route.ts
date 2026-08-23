@@ -3,9 +3,12 @@ import { supabaseServer } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
-// Recebe passos do Tasker (plugin TaskerHealthConnect + acao HTTP Request).
-// Autenticacao simples por token partilhado, ja que o Tasker nao suporta
-// fluxos OAuth — o mesmo padrao usado no sistema-3-pilares.
+// NOTA: esta rota POST foi pensada originalmente para o Tasker/Health Connect
+// (Android). O utilizador usa iPhone, e a fonte real de passos e a Google
+// Health API (ver GET abaixo). Fica aqui como fallback manual — nao esta
+// ligada a nenhum dispositivo neste momento, mas continua funcional se um
+// dia quiseres enviar passos manualmente ou via outra automacao (ex: Atalhos
+// do iOS a fazer um POST direto).
 export async function POST(req: NextRequest) {
   try {
     const expected = process.env.STEPS_TOKEN;

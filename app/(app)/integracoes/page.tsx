@@ -43,6 +43,7 @@ export default function IntegracoesPage() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
+      if (data.validation_note) setError(data.validation_note); // aviso, nao bloqueia
       setName("");
       setApiKey("");
       setShowForm(false);

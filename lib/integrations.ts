@@ -68,6 +68,37 @@ export async function fetchTickTick(): Promise<RawTask[]> {
   return out;
 }
 
+// Validacao real do token contra o provedor — so para integracoes
+// reconhecidas pelo nome (Todoist/TickTick). Integracoes arbitrarias
+// criadas pelo utilizador nao tem API conhecida para validar contra.
+export async function validateProviderToken(
+  providerName: string,
+  token: string
+): Promise<{ recognized: boolean; valid: boolean; error?: string }> {
+  const name = providerName.toLowerCase();
+  if (name.includes("todoist")) {
+    try {
+      const r = await fetch("https://api.todoist.com/api/v1/tasks?limit=1", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return { recognized: true, valid: r.ok, error: r.ok ? undefined : `Todoist respondeu ${r.status}` };
+    } catch (e: any) {
+      return { recognized: true, valid: false, error: e?.message };
+    }
+  }
+  if (name.includes("ticktick")) {
+    try {
+      const r = await fetch("https://api.ticktick.com/open/v1/project", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return { recognized: true, valid: r.ok, error: r.ok ? undefined : `TickTick respondeu ${r.status}` };
+    } catch (e: any) {
+      return { recognized: true, valid: false, error: e?.message };
+    }
+  }
+  return { recognized: false, valid: true }; // nao reconhecido — nao ha como validar, aceita
+}
+
 export async function completeTodoistTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
   const token = process.env.TODOIST_API_TOKEN;
   if (!token) return { ok: false, error: "TODOIST_API_TOKEN nao configurado" };
