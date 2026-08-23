@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { calcBMR } from "@/lib/bmr";
 
 interface NutritionLog {
   id: string;
@@ -23,12 +24,6 @@ interface Profile {
   height_cm: number | null;
   age: number | null;
   sex: "m" | "f" | null;
-}
-
-// Mifflin-St Jeor — formula clinica padrao para metabolismo basal (BMR)
-function calcBMR(weightKg: number, heightCm: number, age: number, sex: "m" | "f") {
-  const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
-  return Math.round(sex === "m" ? base + 5 : base - 161);
 }
 
 const SOURCE_COLORS: Record<string, string> = { foto: "#F54E00", manual: "#36CFC9", treino: "#8B7CF6" };
