@@ -150,11 +150,11 @@ async function googleAccessToken(): Promise<string | null> {
   return j.access_token || null;
 }
 
-async function googleHealthAccessToken(): Promise<string | null> {
+async function googleHealthAccessToken(): Promise<{ token: string | null; error?: string }> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_HEALTH_REFRESH_TOKEN;
-  if (!clientId || !clientSecret || !refreshToken) return null;
+  if (!clientId || !clientSecret || !refreshToken) return { token: null, error: "credenciais nao configuradas" };
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -165,14 +165,17 @@ async function googleHealthAccessToken(): Promise<string | null> {
       grant_type: "refresh_token",
     }),
   });
-  if (!r.ok) return null;
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    return { token: null, error: j.error_description || j.error || `HTTP ${r.status}` };
+  }
   const j: any = await r.json();
-  return j.access_token || null;
+  return { token: j.access_token || null };
 }
 
-export async function fetchFitbitSteps(date: string): Promise<number | null> {
-  const token = await googleHealthAccessToken();
-  if (!token) return null;
+export async function fetchFitbitSteps(date: string): Promise<{ steps: number | null; error?: string }> {
+  const { token, error } = await googleHealthAccessToken();
+  if (!token) return { steps: null, error };
   const [year, month, day] = date.split("-").map(Number);
   const r = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints:dailyRollUp", {
     method: "POST",
@@ -185,10 +188,13 @@ export async function fetchFitbitSteps(date: string): Promise<number | null> {
       windowSizeDays: 1,
     }),
   });
-  if (!r.ok) return null;
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    return { steps: null, error: j.error?.message || `HTTP ${r.status}` };
+  }
   const j: any = await r.json();
   const total = j.rollupDataPoints?.[0]?.steps?.countSum;
-  return total ? parseInt(total, 10) : null;
+  return { steps: total ? parseInt(total, 10) : null };
 }
 
 export interface RawEvent {

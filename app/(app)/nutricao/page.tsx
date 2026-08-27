@@ -68,7 +68,13 @@ export default function NutricaoPage() {
   }, []);
 
   async function load() {
-    fetch("/api/steps").then((r) => r.json()).then((d) => setSteps(d.steps ?? null)).catch(() => setSteps(null));
+    fetch("/api/steps")
+      .then((r) => r.json())
+      .then((d) => {
+        setSteps(d.steps ?? null);
+        if (d.google_health_error) setError("Google Health: " + d.google_health_error);
+      })
+      .catch(() => setSteps(null));
     const { start, end } = todayRange();
     const { data, error } = await supabase
       .from("nutrition_logs")
@@ -244,7 +250,7 @@ export default function NutricaoPage() {
         <StatCard
           title="PASSOS"
           value={steps === undefined ? "…" : steps === null ? "—" : steps.toLocaleString("pt-PT")}
-          sub={steps ? "hoje" : "sem dados ainda — configura o Tasker"}
+          sub={steps ? "hoje" : "sem dados — liga o Google Health API"}
         />
         <StatCard
           title="CALORIAS GASTAS"

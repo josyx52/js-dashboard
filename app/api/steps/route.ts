@@ -40,13 +40,19 @@ export async function GET() {
   try {
     const today = new Date().toISOString().slice(0, 10);
     const { fetchFitbitSteps } = await import("@/lib/integrations");
-    const fitbitSteps = await fetchFitbitSteps(today);
+    const { steps: fitbitSteps, error: fitbitError } = await fetchFitbitSteps(today);
     if (fitbitSteps !== null) {
       return NextResponse.json({ ok: true, steps: fitbitSteps, date: today, source: "fitbit" });
     }
     const sb = supabaseServer();
     const { data } = await sb.from("daily_steps").select("*").eq("date", today).maybeSingle();
-    return NextResponse.json({ ok: true, steps: data?.steps ?? null, date: today, source: data?.source ?? null });
+    return NextResponse.json({
+      ok: true,
+      steps: data?.steps ?? null,
+      date: today,
+      source: data?.source ?? null,
+      google_health_error: fitbitError || null,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
   }
