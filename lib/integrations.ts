@@ -177,20 +177,27 @@ export async function fetchFitbitSteps(date: string): Promise<{ steps: number | 
   const { token, error } = await googleHealthAccessToken();
   if (!token) return { steps: null, error };
   const [year, month, day] = date.split("-").map(Number);
+  // O intervalo tem de ser um dia civil completo e alinhado (00:00 -> 00:00
+  // do dia seguinte), nao 00:00 -> 23:59:59 do mesmo dia — isso rebentava
+  // com "Bad Request" por nao estar alinhado com windowSizeDays=1.
+  const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
   const r = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints:dailyRollUp", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       range: {
         start: { date: { year, month, day }, time: { hours: 0, minutes: 0, seconds: 0, nanos: 0 } },
-        end: { date: { year, month, day }, time: { hours: 23, minutes: 59, seconds: 59, nanos: 0 } },
+        end: {
+          date: { year: nextDay.getUTCFullYear(), month: nextDay.getUTCMonth() + 1, day: nextDay.getUTCDate() },
+          time: { hours: 0, minutes: 0, seconds: 0, nanos: 0 },
+        },
       },
       windowSizeDays: 1,
     }),
   });
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
-    return { steps: null, error: j.error?.message || `HTTP ${r.status}` };
+    return { steps: null, error: `HTTP ${r.status}: ${JSON.stringify(j)}` };
   }
   const j: any = await r.json();
   const total = j.rollupDataPoints?.[0]?.steps?.countSum;
