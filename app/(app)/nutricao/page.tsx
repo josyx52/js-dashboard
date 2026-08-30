@@ -8,6 +8,9 @@ interface NutritionLog {
   created_at: string;
   label: string;
   kcal: number;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
   type: "in" | "out";
   source: string;
 }
@@ -215,6 +218,11 @@ export default function NutricaoPage() {
   const deficitPct = hasRealDeficitData ? Math.round((deficitKcal / caloriesOut) * 100) : null;
   const isDeficit = deficitKcal >= 0;
   const mealCount = (logs || []).filter((l) => l.type === "in").length;
+  const inLogs = (logs || []).filter((l) => l.type === "in");
+  const totalProtein = inLogs.reduce((s, l) => s + Number(l.protein_g || 0), 0);
+  const totalCarbs = inLogs.reduce((s, l) => s + Number(l.carbs_g || 0), 0);
+  const totalFat = inLogs.reduce((s, l) => s + Number(l.fat_g || 0), 0);
+  const hasMacroData = inLogs.some((l) => l.protein_g !== null);
 
   const days: { label: string; in: number; out: number }[] = [];
   for (let i = 6; i >= 0; i--) {
@@ -391,6 +399,23 @@ export default function NutricaoPage() {
         </div>
       </div>
 
+      {hasMacroData && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: "14px 16px" }}>
+            <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>PROTEÍNA</div>
+            <div style={{ font: "700 20px 'JetBrains Mono',monospace", marginTop: 4, color: "#EF5DA8" }}>{Math.round(totalProtein)}g</div>
+          </div>
+          <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: "14px 16px" }}>
+            <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>CARBOIDRATOS</div>
+            <div style={{ font: "700 20px 'JetBrains Mono',monospace", marginTop: 4, color: "#4F8FF7" }}>{Math.round(totalCarbs)}g</div>
+          </div>
+          <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: "14px 16px" }}>
+            <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>GORDURA</div>
+            <div style={{ font: "700 20px 'JetBrains Mono',monospace", marginTop: 4, color: "#E8B93F" }}>{Math.round(totalFat)}g</div>
+          </div>
+        </div>
+      )}
+
       <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, overflow: "hidden" }}>
         <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)", font: "700 13px Inter,sans-serif" }}>
           Refeições e treinos de hoje
@@ -400,18 +425,26 @@ export default function NutricaoPage() {
         )}
         {logs?.map((l) => {
           const c = SOURCE_COLORS[l.source] || "rgba(244,244,242,0.4)";
+          const hasMacros = l.protein_g !== null || l.carbs_g !== null || l.fat_g !== null;
           return (
-            <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-              <span style={{ font: "600 10px 'JetBrains Mono',monospace", letterSpacing: "0.03em", padding: "3px 8px", borderRadius: 3, flexShrink: 0, color: c, background: `${c}1a`, border: `1px solid ${c}40` }}>
-                {l.source.charAt(0).toUpperCase() + l.source.slice(1)}
-              </span>
-              <span style={{ flex: 1, font: "500 13px Inter,sans-serif" }}>{l.label}</span>
-              <span style={{ font: "500 11px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>
-                {new Date(l.created_at).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-              <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: l.type === "in" ? "#F54E00" : "#36CFC9", width: 80, textAlign: "right" }}>
-                {l.type === "in" ? "+" : "−"}{l.kcal} kcal
-              </span>
+            <div key={l.id} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "13px 18px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ font: "600 10px 'JetBrains Mono',monospace", letterSpacing: "0.03em", padding: "3px 8px", borderRadius: 3, flexShrink: 0, color: c, background: `${c}1a`, border: `1px solid ${c}40` }}>
+                  {l.source.charAt(0).toUpperCase() + l.source.slice(1)}
+                </span>
+                <span style={{ flex: 1, font: "500 13px Inter,sans-serif" }}>{l.label}</span>
+                <span style={{ font: "500 11px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>
+                  {new Date(l.created_at).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: l.type === "in" ? "#F54E00" : "#36CFC9", width: 80, textAlign: "right" }}>
+                  {l.type === "in" ? "+" : "−"}{l.kcal} kcal
+                </span>
+              </div>
+              {hasMacros && (
+                <div style={{ font: "500 10.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.35)", paddingLeft: 2 }}>
+                  P {l.protein_g ?? "—"}g · C {l.carbs_g ?? "—"}g · G {l.fat_g ?? "—"}g
+                </div>
+              )}
             </div>
           );
         })}

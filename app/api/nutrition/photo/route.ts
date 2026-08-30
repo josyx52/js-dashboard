@@ -30,8 +30,11 @@ export async function POST(req: NextRequest) {
               parts: [
                 {
                   text:
-                    'Analisa esta foto de um prato de comida. Responde APENAS com JSON valido: ' +
-                    '{"label": "nome curto do prato", "kcal": numero_estimado_de_calorias}',
+                    'Analisa esta foto de um prato de comida. Estima com o melhor do teu ' +
+                    'julgamento visual (tipo de alimento, porção aparente). Responde APENAS ' +
+                    'com JSON valido, sem texto a mais: ' +
+                    '{"label": "nome curto do prato", "kcal": numero, "protein_g": numero, ' +
+                    '"carbs_g": numero, "fat_g": numero}',
                 },
                 { inline_data: { mime_type: mimeType, data: base64Data } },
               ],
@@ -55,6 +58,9 @@ export async function POST(req: NextRequest) {
         user_id: userId,
         label: parsed.label || "Refeição",
         kcal: parsed.kcal || 0,
+        protein_g: parsed.protein_g ?? null,
+        carbs_g: parsed.carbs_g ?? null,
+        fat_g: parsed.fat_g ?? null,
         type: "in",
         source: "foto",
       })

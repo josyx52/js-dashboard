@@ -30,7 +30,7 @@ export default function AgentePage() {
   ]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
-  const [photoResult, setPhotoResult] = useState<{ label: string; kcal: number } | null>(null);
+  const [photoResult, setPhotoResult] = useState<{ label: string; kcal: number; protein_g?: number | null; carbs_g?: number | null; fat_g?: number | null } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -80,7 +80,13 @@ export default function AgentePage() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setPhotoResult({ label: data.log.label, kcal: data.log.kcal });
+      setPhotoResult({
+        label: data.log.label,
+        kcal: data.log.kcal,
+        protein_g: data.log.protein_g,
+        carbs_g: data.log.carbs_g,
+        fat_g: data.log.fat_g,
+      });
     } catch (e: any) {
       setMessages((p) => [...p, { role: "assistant", content: "Erro na foto: " + e.message, time: nowTime() }]);
     } finally {
@@ -111,6 +117,11 @@ export default function AgentePage() {
                 <span style={{ font: "600 12px Inter,sans-serif" }}>{photoResult.label}</span>
                 <span style={{ font: "700 13px 'JetBrains Mono',monospace", color: "#F54E00" }}>{photoResult.kcal} kcal</span>
               </div>
+              {(photoResult.protein_g != null || photoResult.carbs_g != null || photoResult.fat_g != null) && (
+                <div style={{ font: "500 10.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)", marginTop: 6, paddingLeft: 2 }}>
+                  P {photoResult.protein_g ?? "—"}g · C {photoResult.carbs_g ?? "—"}g · G {photoResult.fat_g ?? "—"}g
+                </div>
+              )}
             </div>
           )}
           {mode === "calculadora" && analyzing && (
