@@ -5,6 +5,11 @@ export interface RawTask {
   projectId?: string;
 }
 
+// Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
+// se o Cloudflare esta mesmo a servir o codigo mais recente.
+export const DEPLOY_MARKER = "20260830-2109";
+
+
 export async function fetchTodoist(): Promise<RawTask[]> {
   const token = process.env.TODOIST_API_TOKEN;
   if (!token) return [];
@@ -197,7 +202,7 @@ export async function fetchFitbitSteps(date: string): Promise<{ steps: number | 
   });
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
-    return { steps: null, error: `HTTP ${r.status}: ${JSON.stringify(j)}` };
+    return { steps: null, error: `[v${DEPLOY_MARKER}] HTTP ${r.status}: ${JSON.stringify(j)}` };
   }
   const j: any = await r.json();
   const total = j.rollupDataPoints?.[0]?.steps?.countSum;
