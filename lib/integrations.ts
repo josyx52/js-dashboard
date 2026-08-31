@@ -7,7 +7,7 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "20260830-2109";
+export const DEPLOY_MARKER = "oauth-fix-2";
 
 
 export async function fetchTodoist(): Promise<RawTask[]> {
