@@ -171,8 +171,8 @@ async function googleHealthAccessToken(): Promise<{ token: string | null; error?
     }),
   });
   if (!r.ok) {
-    const j = await r.json().catch(() => ({}));
-    return { token: null, error: j.error_description || j.error || `HTTP ${r.status}` };
+    const raw = await r.text();
+    return { token: null, error: `[v${DEPLOY_MARKER}] OAUTH HTTP ${r.status}: ${raw}` };
   }
   const j: any = await r.json();
   return { token: j.access_token || null };
