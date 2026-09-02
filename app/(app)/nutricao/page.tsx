@@ -27,7 +27,13 @@ interface Profile {
   height_cm: number | null;
   age: number | null;
   sex: "m" | "f" | null;
+  goal: "perder" | "manter" | "ganhar" | null;
 }
+
+// Meta de defice/superavit calorico recomendada por objetivo (percentagem
+// sobre as calorias gastas). Negativo = superavit (comer mais que gasta).
+const GOAL_TARGET_PCT: Record<string, number> = { perder: 20, manter: 0, ganhar: -15 };
+const GOAL_LABEL: Record<string, string> = { perder: "Perder peso", manter: "Manter", ganhar: "Ganhar massa" };
 
 const SOURCE_COLORS: Record<string, string> = { foto: "#F54E00", manual: "#36CFC9", treino: "#8B7CF6" };
 
@@ -57,6 +63,7 @@ export default function NutricaoPage() {
   const [heightInput, setHeightInput] = useState("");
   const [ageInput, setAgeInput] = useState("");
   const [sexInput, setSexInput] = useState<"m" | "f">("m");
+  const [goalInput, setGoalInput] = useState<"perder" | "manter" | "ganhar">("manter");
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [label, setLabel] = useState("");
@@ -106,10 +113,11 @@ export default function NutricaoPage() {
 
     const { data: prof } = await supabase
       .from("user_profile")
-      .select("height_cm, age, sex")
+      .select("height_cm, age, sex, goal")
       .eq("id", "00000000-0000-0000-0000-000000000001")
       .maybeSingle();
-    setProfile((prof as Profile) || { height_cm: null, age: null, sex: null });
+    setProfile((prof as Profile) || { height_cm: null, age: null, sex: null, goal: null });
+    if (prof?.goal) setGoalInput(prof.goal);
   }
 
   async function saveProfile(e: React.FormEvent) {
@@ -121,6 +129,7 @@ export default function NutricaoPage() {
       height_cm: parseFloat(heightInput),
       age: parseInt(ageInput, 10),
       sex: sexInput,
+      goal: goalInput,
       updated_at: new Date().toISOString(),
     });
     setSavingProfile(false);
@@ -219,6 +228,12 @@ export default function NutricaoPage() {
   const deficitKcal = caloriesOut - caloriesIn;
   const deficitPct = hasRealDeficitData ? Math.round((deficitKcal / caloriesOut) * 100) : null;
   const isDeficit = deficitKcal >= 0;
+  const goalOnTrack: boolean | null = (() => {
+    if (deficitPct === null || !profile?.goal) return null;
+    if (profile.goal === "perder") return deficitPct >= GOAL_TARGET_PCT.perder;
+    if (profile.goal === "ganhar") return deficitPct <= GOAL_TARGET_PCT.ganhar;
+    return Math.abs(deficitPct) <= 10; // manter: tolerancia de 10 pontos
+  })();
   const mealCount = (logs || []).filter((l) => l.type === "in").length;
   const inLogs = (logs || []).filter((l) => l.type === "in");
   const totalProtein = inLogs.reduce((s, l) => s + Number(l.protein_g || 0), 0);
@@ -276,9 +291,25 @@ export default function NutricaoPage() {
         <StatCard
           title="DÉFICIT CALÓRICO"
           value={deficitPct === null ? "—" : `${deficitPct}%`}
-          sub={deficitPct === null ? "precisa de basal (não calculado)" : `${Math.abs(deficitKcal)} kcal`}
-          color={deficitPct === null ? undefined : isDeficit ? "#3DDC84" : "#FF5F5F"}
-          border={deficitPct === null ? undefined : isDeficit ? "rgba(61,220,132,0.3)" : "rgba(255,95,95,0.3)"}
+          sub={
+            deficitPct === null
+              ? "precisa de basal (não calculado)"
+              : profile?.goal
+              ? `meta ${GOAL_TARGET_PCT[profile.goal]}% · ${GOAL_LABEL[profile.goal]}`
+              : `${Math.abs(deficitKcal)} kcal · sem objetivo definido`
+          }
+          color={deficitPct === null ? undefined : goalOnTrack === null ? (isDeficit ? "#3DDC84" : "#FF5F5F") : goalOnTrack ? "#3DDC84" : "#E8B93F"}
+          border={
+            deficitPct === null
+              ? undefined
+              : goalOnTrack === null
+              ? isDeficit
+                ? "rgba(61,220,132,0.3)"
+                : "rgba(255,95,95,0.3)"
+              : goalOnTrack
+              ? "rgba(61,220,132,0.3)"
+              : "rgba(232,185,63,0.3)"
+          }
         />
       </div>
 
@@ -372,6 +403,12 @@ export default function NutricaoPage() {
                   <option value="f">F</option>
                 </select>
               </div>
+              <select value={goalInput} onChange={(e) => setGoalInput(e.target.value as "perder" | "manter" | "ganhar")}
+                className="bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] outline-none">
+                <option value="perder">Objetivo: Perder peso</option>
+                <option value="manter">Objetivo: Manter</option>
+                <option value="ganhar">Objetivo: Ganhar massa</option>
+              </select>
               <button type="submit" disabled={savingProfile} className="px-3 py-1.5 bg-accent border-none rounded text-bg font-mono font-bold text-[10px] disabled:opacity-50">
                 {savingProfile ? "…" : "GRAVAR PERFIL"}
               </button>
