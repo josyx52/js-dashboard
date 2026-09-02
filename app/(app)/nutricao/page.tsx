@@ -32,7 +32,7 @@ interface Profile {
 
 // Meta de defice/superavit calorico recomendada por objetivo (percentagem
 // sobre as calorias gastas). Negativo = superavit (comer mais que gasta).
-const GOAL_TARGET_PCT: Record<string, number> = { perder: 20, manter: 0, ganhar: -15 };
+const GOAL_TARGET_PCT: Record<string, number> = { perder: 15, manter: 0, ganhar: -15 };
 const GOAL_LABEL: Record<string, string> = { perder: "Perder peso", manter: "Manter", ganhar: "Ganhar massa" };
 
 const SOURCE_COLORS: Record<string, string> = { foto: "#F54E00", manual: "#36CFC9", treino: "#8B7CF6" };
