@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { TaskCache, Integration } from "@/lib/types";
+import { compressImageToBase64 } from "@/lib/image";
 
 type Mode = "chat" | "calculadora" | "gtd";
 
@@ -67,12 +68,7 @@ export default function AgentePage() {
     setAnalyzing(true);
     setPhotoResult(null);
     try {
-      const base64: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      const base64 = await compressImageToBase64(file);
       const res = await fetch("/api/nutrition/photo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

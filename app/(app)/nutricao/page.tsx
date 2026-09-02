@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { calcBMR } from "@/lib/bmr";
+import { compressImageToBase64 } from "@/lib/image";
 
 interface NutritionLog {
   id: string;
@@ -198,12 +199,7 @@ export default function NutricaoPage() {
     setAnalyzing(true);
     setError(null);
     try {
-      const base64: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      const base64 = await compressImageToBase64(file);
       const res = await fetch("/api/nutrition/photo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
