@@ -223,11 +223,15 @@ export default function NutricaoPage() {
       ? calcBMR(body.weight_kg, profile.height_cm, profile.age, profile.sex)
       : null;
 
+  // Calorias gastas a andar (NEAT) — estimativa padrao: ~0.0005 kcal por
+  // passo por kg de peso corporal (ex: 70kg * 10.000 passos ~ 350 kcal).
+  const stepsKcal = steps && body?.weight_kg ? Math.round(steps * body.weight_kg * 0.0005) : 0;
+
   const caloriesIn = (logs || []).filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0);
   const outLogs = (logs || []).filter((l) => l.type === "out");
   const treinoKcal = outLogs.reduce((s, l) => s + Number(l.kcal), 0);
-  const caloriesOut = bmr !== null ? bmr + treinoKcal : treinoKcal;
-  const hasRealDeficitData = (bmr !== null || outLogs.length > 0) && caloriesIn >= 0 && caloriesOut > 0;
+  const caloriesOut = (bmr !== null ? bmr : 0) + stepsKcal + treinoKcal;
+  const hasRealDeficitData = (bmr !== null || outLogs.length > 0 || stepsKcal > 0) && caloriesIn >= 0 && caloriesOut > 0;
   const deficitKcal = caloriesOut - caloriesIn;
   const deficitPct = hasRealDeficitData ? Math.round((deficitKcal / caloriesOut) * 100) : null;
   const isDeficit = deficitKcal >= 0;
@@ -285,7 +289,7 @@ export default function NutricaoPage() {
           value={caloriesOut === 0 ? "—" : String(caloriesOut)}
           sub={
             bmr !== null
-              ? `basal ${bmr} + treino ${treinoKcal}`
+              ? `basal ${bmr} + passos ${stepsKcal} + treino ${treinoKcal}`
               : "define o perfil para basal real"
           }
           color="#36CFC9"
