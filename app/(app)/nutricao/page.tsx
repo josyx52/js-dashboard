@@ -37,15 +37,18 @@ const GOAL_LABEL: Record<string, string> = { perder: "Perder peso", manter: "Man
 
 const SOURCE_COLORS: Record<string, string> = { foto: "#F54E00", manual: "#36CFC9", treino: "#8B7CF6" };
 
-function todayRange() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
+function dayRange(dateStr: string) {
+  const start = new Date(dateStr + "T00:00:00");
+  const end = new Date(dateStr + "T23:59:59.999");
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function NutricaoPage() {
+  const [selectedDate, setSelectedDate] = useState(todayIso());
   const [logs, setLogs] = useState<NutritionLog[] | null>(null);
   const [weekLogs, setWeekLogs] = useState<NutritionLog[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +78,7 @@ export default function NutricaoPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [selectedDate]);
 
   async function load() {
     fetch("/api/steps")
@@ -85,7 +88,7 @@ export default function NutricaoPage() {
         if (d.google_health_error) setError("Google Health: " + d.google_health_error);
       })
       .catch(() => setSteps(null));
-    const { start, end } = todayRange();
+    const { start, end } = dayRange(selectedDate);
     const { data, error } = await supabase
       .from("nutrition_logs")
       .select("*")
@@ -208,7 +211,8 @@ export default function NutricaoPage() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      await load();
+      if (selectedDate !== todayIso()) setSelectedDate(todayIso());
+      else await load();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -272,9 +276,49 @@ export default function NutricaoPage() {
 
   return (
     <div className="p-4 sm:p-[28px_36px] flex flex-col gap-5">
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="date"
+            value={selectedDate}
+            max={todayIso()}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            style={{ background: "#14161B", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 4, padding: "8px 10px", color: "#F4F4F2", font: "600 12px 'JetBrains Mono',monospace" }}
+          />
+          {selectedDate !== todayIso() && (
+            <button
+              onClick={() => setSelectedDate(todayIso())}
+              style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 4, padding: "8px 12px", color: "rgba(244,244,242,0.6)", font: "600 11px 'JetBrains Mono',monospace", cursor: "pointer" }}
+            >
+              ← HOJE
+            </button>
+          )}
+        </div>
+        <label
+          style={{ display: "flex", alignItems: "center", gap: 8, background: "#F54E00", border: "none", borderRadius: 4, padding: "9px 16px", color: "#0B0C10", font: "700 11px 'JetBrains Mono',monospace", cursor: analyzing ? "default" : "pointer", opacity: analyzing ? 0.6 : 1 }}
+        >
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={onPhoto}
+            disabled={analyzing}
+            style={{ display: "none" }}
+          />
+          {analyzing ? "A ANALISAR…" : "+ REGISTAR REFEIÇÃO"}
+        </label>
+      </div>
+
       {error && (
         <div className="bg-red-500/10 text-red-400 border border-red-500/30 rounded px-4 py-2 font-mono text-[11.5px]">
           {error}
+        </div>
+      )}
+
+      {selectedDate !== todayIso() && (
+        <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, padding: "10px 14px", font: "500 11.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.5)" }}>
+          A ver {new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-PT")} — Passos e Composição Corporal continuam a mostrar sempre hoje
         </div>
       )}
 
@@ -464,7 +508,7 @@ export default function NutricaoPage() {
 
       <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, overflow: "hidden" }}>
         <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)", font: "700 13px Inter,sans-serif" }}>
-          Refeições e treinos de hoje
+          {selectedDate === todayIso() ? "Refeições e treinos de hoje" : `Refeições e treinos — ${new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" })}`}
         </div>
         {(!logs || logs.length === 0) && (
           <div className="px-[18px] py-4 text-[12.5px] text-white/35 font-sans">nada registado ainda</div>
