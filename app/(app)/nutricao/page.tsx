@@ -118,6 +118,9 @@ export default function NutricaoPage() {
       .maybeSingle();
     setProfile((prof as Profile) || { height_cm: null, age: null, sex: null, goal: null });
     if (prof?.goal) setGoalInput(prof.goal);
+    if (prof?.height_cm) setHeightInput(String(prof.height_cm));
+    if (prof?.age) setAgeInput(String(prof.age));
+    if (prof?.sex) setSexInput(prof.sex);
   }
 
   async function saveProfile(e: React.FormEvent) {
