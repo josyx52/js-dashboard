@@ -136,17 +136,19 @@ export default function NutricaoPage() {
     if (!weight && !bodyFat && !leanMass) return;
     setSavingBody(true);
     const today = new Date().toISOString().slice(0, 10);
-    const { error } = await supabase.from("body_composition").upsert(
-      {
+    const res = await fetch("/api/nutrition/body", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         date: today,
         weight_kg: weight ? parseFloat(weight) : null,
         body_fat_pct: bodyFat ? parseFloat(bodyFat) : null,
         lean_mass_kg: leanMass ? parseFloat(leanMass) : null,
-      },
-      { onConflict: "user_id,date" }
-    );
+      }),
+    });
+    const data = await res.json();
     setSavingBody(false);
-    if (error) setError(error.message);
+    if (data.error) setError(data.error);
     else {
       setWeight("");
       setBodyFat("");
