@@ -54,6 +54,7 @@ export default function NutricaoPage() {
   const [weekLogs, setWeekLogs] = useState<NutritionLog[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [photoResult, setPhotoResult] = useState<{ label: string; kcal: number; protein_g?: number | null; carbs_g?: number | null; fat_g?: number | null } | null>(null);
 
   const [bodyHistory, setBodyHistory] = useState<BodyEntry[] | null>(null);
   const [steps, setSteps] = useState<number | null | undefined>(undefined);
@@ -198,6 +199,7 @@ export default function NutricaoPage() {
     if (!file) return;
     setAnalyzing(true);
     setError(null);
+    setPhotoResult(null);
     try {
       const base64 = await compressImageToBase64(file);
       const res = await fetch("/api/nutrition/photo", {
@@ -207,6 +209,13 @@ export default function NutricaoPage() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
+      setPhotoResult({
+        label: data.log.label,
+        kcal: data.log.kcal,
+        protein_g: data.log.protein_g,
+        carbs_g: data.log.carbs_g,
+        fat_g: data.log.fat_g,
+      });
       if (selectedDate !== todayIso()) setSelectedDate(todayIso());
       else await load();
     } catch (e: any) {
@@ -305,6 +314,20 @@ export default function NutricaoPage() {
           {analyzing ? "A ANALISAR…" : "+ REGISTAR REFEIÇÃO"}
         </label>
       </div>
+
+      {photoResult && (
+        <div style={{ border: "1px solid rgba(245,78,0,0.3)", background: "rgba(245,78,0,0.06)", borderRadius: 8, padding: "12px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <span style={{ font: "600 13px Inter,sans-serif" }}>{photoResult.label}</span>
+            <span style={{ font: "700 14px 'JetBrains Mono',monospace", color: "#F54E00" }}>{photoResult.kcal} kcal</span>
+          </div>
+          {(photoResult.protein_g != null || photoResult.carbs_g != null || photoResult.fat_g != null) && (
+            <div style={{ font: "500 10.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)", marginTop: 6 }}>
+              P {photoResult.protein_g ?? "—"}g · C {photoResult.carbs_g ?? "—"}g · G {photoResult.fat_g ?? "—"}g
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-500/10 text-red-400 border border-red-500/30 rounded px-4 py-2 font-mono text-[11.5px]">
