@@ -7,7 +7,7 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "body-fix-3";
+export const DEPLOY_MARKER = "gallery-fix-4";
 
 
 export async function fetchTodoist(): Promise<RawTask[]> {
