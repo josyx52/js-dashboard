@@ -489,9 +489,9 @@ export default function NutricaoPage() {
           <div style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.06em", color: "rgba(244,244,242,0.4)", marginBottom: 10 }}>
             INGERIDAS VS GASTAS · 7 DIAS
           </div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 150 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 150, overflowX: "auto" }}>
             {days.map((d, i) => (
-              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", gap: 4, height: "100%" }}>
+              <div key={i} style={{ flex: "1 0 32px", minWidth: 32, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", gap: 4, height: "100%" }}>
                 <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 2, width: "100%", justifyContent: "center" }}>
                   <div style={{ width: 8, borderRadius: "2px 2px 0 0", background: "#F54E00", height: Math.max(4, (d.in / maxCal) * 120) }} />
                   <div style={{ width: 8, borderRadius: "2px 2px 0 0", background: "#36CFC9", height: Math.max(4, (d.out / maxCal) * 120) }} />
