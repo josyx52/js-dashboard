@@ -45,7 +45,16 @@ function dayRange(dateStr: string) {
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey(new Date());
+}
+
+// Data local (fuso do browser) em YYYY-MM-DD — diferente de toISOString(),
+// que da a data em UTC e pode "saltar" de dia perto da meia-noite local.
+function localDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export default function NutricaoPage() {
@@ -261,8 +270,8 @@ export default function NutricaoPage() {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    const dayLogs = (weekLogs || []).filter((l) => l.created_at.slice(0, 10) === key);
+    const key = localDateKey(d);
+    const dayLogs = (weekLogs || []).filter((l) => localDateKey(new Date(l.created_at)) === key);
     days.push({
       label: i === 0 ? "HOJE" : d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3).toUpperCase(),
       in: i === 0 ? caloriesIn : dayLogs.filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0),
