@@ -1,3 +1,5 @@
+import { plainTitle } from "@/lib/text";
+
 const PILLAR_KEYS = ["deus", "saude", "familia", "estudo", "negocio", "trabalho"] as const;
 
 export async function generateIntegrationTools(
@@ -42,7 +44,7 @@ export async function classifyPillars(
   const prompt = `Classifica cada tarefa abaixo num destes pilares: ${PILLAR_KEYS.join(", ")}.
 Responde APENAS com JSON valido, um array de objetos {"id": "...", "pillar": "..."}.
 Tarefas:
-${tasks.map((t) => `- id=${t.id}: ${t.content}`).join("\n")}`;
+${tasks.map((t) => `- id=${t.id}: ${plainTitle(t.content)}`).join("\n")}`;
 
   try {
     const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {

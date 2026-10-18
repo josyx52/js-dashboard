@@ -4,6 +4,19 @@ import { validateProviderToken } from "@/lib/integrations";
 
 export const runtime = "nodejs";
 
+export async function GET() {
+  try {
+    const { data, error } = await supabaseServer()
+      .from("integrations")
+      .select("id, name, description, connected, capabilities, created_at")
+      .order("created_at", { ascending: false });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, integrations: data || [] });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const userId = process.env.SYNC_USER_ID;
@@ -11,9 +24,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "SYNC_USER_ID nao configurado" }, { status: 500 });
     }
     const body = await req.json();
-    const { name, api_key, description } = body;
+    const name = String(body.name || "").trim();
+    const { api_key, description } = body;
     if (!name) {
       return NextResponse.json({ error: "nome obrigatorio" }, { status: 400 });
+    }
+
+    const sb = supabaseServer();
+
+    // Evita duplicados (ex: "notion" e "Notion2" para o mesmo servico).
+    const { data: existing } = await sb.from("integrations").select("id, name");
+    const dup = (existing || []).find((i) => i.name.trim().toLowerCase() === name.toLowerCase());
+    if (dup) {
+      return NextResponse.json({ error: `ja existe uma integracao "${dup.name}"` }, { status: 409 });
     }
 
     let validationNote: string | null = null;
@@ -29,8 +52,6 @@ export async function POST(req: NextRequest) {
         validationNote = "integracao nao reconhecida — a API key nao foi validada contra nenhum provedor";
       }
     }
-
-    const sb = supabaseServer();
 
     let vaultId: string | null = null;
     if (api_key) {

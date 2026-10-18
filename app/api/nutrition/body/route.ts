@@ -3,6 +3,22 @@ import { supabaseServer } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
+// Ultima medicao registada (a mais recente por data).
+export async function GET() {
+  try {
+    const { data, error } = await supabaseServer()
+      .from("body_composition")
+      .select("*")
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, body: data });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const userId = process.env.SYNC_USER_ID;

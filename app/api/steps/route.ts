@@ -20,6 +20,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const steps = Math.round(Number(body.steps));
     const date = body.date || new Date().toISOString().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return NextResponse.json({ error: "date invalida (YYYY-MM-DD)" }, { status: 400 });
+    }
     if (!steps || steps < 0) {
       return NextResponse.json({ error: "steps invalido" }, { status: 400 });
     }
@@ -36,22 +39,26 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
+// ?date=YYYY-MM-DD — a data local vem do browser; o Worker corre em UTC e
+// perto da meia-noite pedia os passos do dia errado.
+export async function GET(req: NextRequest) {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const param = req.nextUrl.searchParams.get("date");
+    const today = param && /^\d{4}-\d{2}-\d{2}$/.test(param) ? param : new Date().toISOString().slice(0, 10);
     const { fetchFitbitSteps } = await import("@/lib/integrations");
     const { steps: fitbitSteps, error: fitbitError } = await fetchFitbitSteps(today);
     if (fitbitSteps !== null) {
       return NextResponse.json({ ok: true, steps: fitbitSteps, date: today, source: "fitbit" });
     }
     const sb = supabaseServer();
-    const { data } = await sb.from("daily_steps").select("*").eq("date", today).maybeSingle();
+    const { data, error: dbError } = await sb.from("daily_steps").select("*").eq("date", today).maybeSingle();
     return NextResponse.json({
       ok: true,
       steps: data?.steps ?? null,
       date: today,
       source: data?.source ?? null,
       google_health_error: fitbitError || null,
+      db_error: dbError?.message || null,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });

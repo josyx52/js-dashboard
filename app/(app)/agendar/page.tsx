@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
+import { plainTitle } from "@/lib/text";
 import { PILLARS, TaskCache } from "@/lib/types";
 
 interface CalEvent {
@@ -53,9 +54,12 @@ export default function AgendarPage() {
   }, []);
 
   async function loadTasks() {
-    const { data, error } = await supabase.from("tasks_cache").select("*").eq("status", "open");
-    if (error) setError(error.message);
-    else setTasks(data as TaskCache[]);
+    try {
+      const data = await api<{ tasks: TaskCache[] }>("/api/tasks");
+      setTasks(data.tasks);
+    } catch (e: any) {
+      setError(e.message);
+    }
   }
 
   async function loadEvents() {
@@ -75,21 +79,29 @@ export default function AgendarPage() {
       setMsg({ type: "err", text: "preenche todos os campos" });
       return;
     }
+    // Hora local do browser -> ISO com fuso correto. Antes o offset estava
+    // fixo em +01:00 e no horario de inverno os eventos ficavam 1h ao lado.
+    const start = new Date(`${date}T${startT}:00`);
+    const end = new Date(`${date}T${endT}:00`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      setMsg({ type: "err", text: "data ou hora invalida" });
+      return;
+    }
+    if (end <= start) {
+      setMsg({ type: "err", text: "o fim tem de ser depois do início" });
+      return;
+    }
     setSending(true);
     setMsg(null);
     try {
-      const res = await fetch("/api/schedule", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await api("/api/schedule", {
+        body: {
           summary: title,
-          start: `${date}T${startT}:00+01:00`,
-          end: `${date}T${endT}:00+01:00`,
+          start: start.toISOString(),
+          end: end.toISOString(),
           reminder_minutes: parseInt(reminder, 10),
-        }),
+        },
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
       setMsg({ type: "ok", text: `Agendado — lembrete ${reminder} min antes.` });
       setTitle(""); setDate(""); setStartT(""); setEndT("");
       await loadEvents();
@@ -112,7 +124,7 @@ export default function AgendarPage() {
       .filter((t) => t.due === iso)
       .map((t) => {
         const meta = pillarMeta(t.pillar);
-        return { key: "t-" + t.id, time: "", label: meta.label, color: meta.color, title: t.content };
+        return { key: "t-" + t.id, time: "", label: meta.label, color: meta.color, title: plainTitle(t.content) };
       });
     const eventRows = (events || [])
       .filter((e) => e.start.slice(0, 10) === iso)

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
+import { localDateKey } from "@/lib/dates";
 import { calcBMR } from "@/lib/bmr";
 import { compressImageToBase64 } from "@/lib/image";
 
@@ -48,15 +49,6 @@ function todayIso() {
   return localDateKey(new Date());
 }
 
-// Data local (fuso do browser) em YYYY-MM-DD — diferente de toISOString(),
-// que da a data em UTC e pode "saltar" de dia perto da meia-noite local.
-function localDateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 export default function NutricaoPage() {
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [logs, setLogs] = useState<NutritionLog[] | null>(null);
@@ -92,68 +84,56 @@ export default function NutricaoPage() {
   }, [selectedDate]);
 
   async function load() {
-    fetch("/api/steps")
-      .then((r) => r.json())
+    setError(null);
+    api<{ steps: number | null; google_health_error: string | null }>(`/api/steps?date=${todayIso()}`)
       .then((d) => {
         setSteps(d.steps ?? null);
         if (d.google_health_error) setError("Google Health: " + d.google_health_error);
       })
       .catch(() => setSteps(null));
-    const { start, end } = dayRange(selectedDate);
-    const { data, error } = await supabase
-      .from("nutrition_logs")
-      .select("*")
-      .gte("created_at", start)
-      .lte("created_at", end)
-      .order("created_at", { ascending: false });
-    if (error) setError(error.message);
-    else setLogs(data as NutritionLog[]);
 
+    const { start, end } = dayRange(selectedDate);
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 6);
     weekAgo.setHours(0, 0, 0, 0);
-    const { data: wk } = await supabase
-      .from("nutrition_logs")
-      .select("*")
-      .gte("created_at", weekAgo.toISOString());
-    setWeekLogs((wk as NutritionLog[]) || []);
+    const q = (from: string, to?: string) =>
+      `/api/nutrition/logs?from=${encodeURIComponent(from)}` + (to ? `&to=${encodeURIComponent(to)}` : "");
 
-    const { data: body } = await supabase
-      .from("body_composition")
-      .select("*")
-      .order("date", { ascending: false })
-      .limit(1);
-    setBodyHistory((body as BodyEntry[]) || []);
-
-    const { data: prof } = await supabase
-      .from("user_profile")
-      .select("height_cm, age, sex, goal")
-      .eq("id", "00000000-0000-0000-0000-000000000001")
-      .maybeSingle();
-    setProfile((prof as Profile) || { height_cm: null, age: null, sex: null, goal: null });
-    if (prof?.goal) setGoalInput(prof.goal);
-    if (prof?.height_cm) setHeightInput(String(prof.height_cm));
-    if (prof?.age) setAgeInput(String(prof.age));
-    if (prof?.sex) setSexInput(prof.sex);
+    try {
+      const [day, week, body, prof] = await Promise.all([
+        api<{ logs: NutritionLog[] }>(q(start, end)),
+        api<{ logs: NutritionLog[] }>(q(weekAgo.toISOString())),
+        api<{ body: BodyEntry | null }>("/api/nutrition/body"),
+        api<{ profile: Profile | null }>("/api/profile"),
+      ]);
+      setLogs(day.logs);
+      setWeekLogs(week.logs);
+      setBodyHistory(body.body ? [body.body] : []);
+      const p = prof.profile;
+      setProfile(p || { height_cm: null, age: null, sex: null, goal: null });
+      if (p?.goal) setGoalInput(p.goal);
+      if (p?.height_cm) setHeightInput(String(p.height_cm));
+      if (p?.age) setAgeInput(String(p.age));
+      if (p?.sex) setSexInput(p.sex);
+    } catch (e: any) {
+      setError(e.message);
+    }
   }
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
     if (!heightInput || !ageInput) return;
     setSavingProfile(true);
-    const { error } = await supabase.from("user_profile").upsert({
-      id: "00000000-0000-0000-0000-000000000001",
-      height_cm: parseFloat(heightInput),
-      age: parseInt(ageInput, 10),
-      sex: sexInput,
-      goal: goalInput,
-      updated_at: new Date().toISOString(),
-    });
-    setSavingProfile(false);
-    if (error) setError(error.message);
-    else {
+    try {
+      await api("/api/profile", {
+        body: { height_cm: parseFloat(heightInput), age: parseInt(ageInput, 10), sex: sexInput, goal: goalInput },
+      });
       setShowProfileForm(false);
       await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSavingProfile(false);
     }
   }
 
@@ -161,7 +141,7 @@ export default function NutricaoPage() {
     e.preventDefault();
     if (!weight && !bodyFat && !leanMass) return;
     setSavingBody(true);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIso();
     const res = await fetch("/api/nutrition/body", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -188,18 +168,15 @@ export default function NutricaoPage() {
     e.preventDefault();
     if (!label.trim() || !kcal) return;
     setSaving(true);
-    const { error } = await supabase.from("nutrition_logs").insert({
-      label,
-      kcal: parseFloat(kcal),
-      type,
-      source: "manual",
-    });
-    setSaving(false);
-    if (error) setError(error.message);
-    else {
+    try {
+      await api("/api/nutrition/logs", { body: { label, kcal: parseFloat(kcal), type } });
       setLabel("");
       setKcal("");
       await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -241,6 +218,11 @@ export default function NutricaoPage() {
       ? calcBMR(body.weight_kg, profile.height_cm, profile.age, profile.sex)
       : null;
 
+  const bmi =
+    body?.weight_kg && profile?.height_cm
+      ? (body.weight_kg / Math.pow(profile.height_cm / 100, 2)).toFixed(1)
+      : null;
+
   // Calorias gastas a andar (NEAT) — estimativa padrao: ~0.0005 kcal por
   // passo por kg de peso corporal (ex: 70kg * 10.000 passos ~ 350 kcal).
   const stepsKcal = steps && body?.weight_kg ? Math.round(steps * body.weight_kg * 0.0005) : 0;
@@ -249,7 +231,10 @@ export default function NutricaoPage() {
   const outLogs = (logs || []).filter((l) => l.type === "out");
   const treinoKcal = outLogs.reduce((s, l) => s + Number(l.kcal), 0);
   const caloriesOut = (bmr !== null ? bmr : 0) + stepsKcal + treinoKcal;
-  const hasRealDeficitData = (bmr !== null || outLogs.length > 0 || stepsKcal > 0) && caloriesIn >= 0 && caloriesOut > 0;
+  const mealCount = (logs || []).filter((l) => l.type === "in").length;
+  // Sem refeicoes registadas o defice dava sempre 100% ("no objetivo"), o que
+  // e enganador — so calcular quando ha pelo menos uma refeicao no dia.
+  const hasRealDeficitData = mealCount > 0 && (bmr !== null || outLogs.length > 0 || stepsKcal > 0) && caloriesOut > 0;
   const deficitKcal = caloriesOut - caloriesIn;
   const deficitPct = hasRealDeficitData ? Math.round((deficitKcal / caloriesOut) * 100) : null;
   const isDeficit = deficitKcal >= 0;
@@ -259,7 +244,6 @@ export default function NutricaoPage() {
     if (profile.goal === "ganhar") return deficitPct <= GOAL_TARGET_PCT.ganhar;
     return Math.abs(deficitPct) <= 10; // manter: tolerancia de 10 pontos
   })();
-  const mealCount = (logs || []).filter((l) => l.type === "in").length;
   const inLogs = (logs || []).filter((l) => l.type === "in");
   const totalProtein = inLogs.reduce((s, l) => s + Number(l.protein_g || 0), 0);
   const totalCarbs = inLogs.reduce((s, l) => s + Number(l.carbs_g || 0), 0);
@@ -371,7 +355,9 @@ export default function NutricaoPage() {
           value={deficitPct === null ? "—" : `${deficitPct}%`}
           sub={
             deficitPct === null
-              ? "precisa de basal (não calculado)"
+              ? mealCount === 0
+                ? "sem refeições registadas"
+                : "precisa de basal (não calculado)"
               : profile?.goal
               ? `meta ${GOAL_TARGET_PCT[profile.goal]}% · ${GOAL_LABEL[profile.goal]}`
               : `${Math.abs(deficitKcal)} kcal · sem objetivo definido`
@@ -433,19 +419,32 @@ export default function NutricaoPage() {
           </div>
           <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
             <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
+              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>PESO</div>
+              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#F4F4F2" }}>{body?.weight_kg != null ? `${body.weight_kg} kg` : "—"}</div>
+              {body?.date && (
+                <div style={{ font: "500 9.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.3)", marginTop: 2 }}>
+                  {new Date(body.date + "T12:00:00").toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                </div>
+              )}
+            </div>
+            <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
+              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>IMC</div>
+              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#E8B93F" }}>{bmi ?? "—"}</div>
+            </div>
+            <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
               <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>GORDURA CORPORAL</div>
-              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#36CFC9" }}>{body?.body_fat_pct ?? "—"}%</div>
+              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#36CFC9" }}>{body?.body_fat_pct != null ? `${body.body_fat_pct}%` : "—"}</div>
             </div>
             <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
               <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>MASSA MAGRA</div>
-              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#8B7CF6" }}>{body?.lean_mass_kg ?? "—"} kg</div>
+              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#8B7CF6" }}>{body?.lean_mass_kg != null ? `${body.lean_mass_kg} kg` : "—"}</div>
             </div>
           </div>
           <button
             onClick={() => setShowBodyForm((s) => !s)}
             className="font-mono font-semibold text-[10px] text-white/40 hover:text-accent transition-colors text-left"
           >
-            {showBodyForm ? "fechar" : "+ registar peso de hoje"}
+            {showBodyForm ? "fechar" : "+ registar medição de hoje (peso, gordura, massa magra)"}
           </button>
           {showBodyForm && (
             <form onSubmit={saveBody} className="flex flex-col gap-2">
@@ -565,6 +564,25 @@ export default function NutricaoPage() {
             </div>
           );
         })}
+        {selectedDate === todayIso() && (
+          <form onSubmit={addManual} className="flex flex-wrap gap-2 px-[18px] py-3">
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as "in" | "out")}
+              className="bg-bg border border-white/10 rounded px-2 py-1.5 text-[12px] font-mono outline-none focus:border-accent"
+            >
+              <option value="in">refeição</option>
+              <option value="out">treino</option>
+            </select>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={type === "in" ? "o que comeste" : "treino"}
+              className="flex-[2_1_140px] min-w-0 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
+            <input value={kcal} onChange={(e) => setKcal(e.target.value)} placeholder="kcal" type="number" min="0" step="1"
+              className="flex-[1_1_70px] min-w-0 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
+            <button type="submit" disabled={saving || !label.trim() || !kcal} className="px-3 py-1.5 bg-accent border-none rounded text-bg font-mono font-bold text-[10px] disabled:opacity-50">
+              {saving ? "…" : "+ MANUAL"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

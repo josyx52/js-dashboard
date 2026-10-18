@@ -25,7 +25,11 @@ export async function POST(req: NextRequest) {
           "(Deus, Saude, Familia, Estudo, Negocio, Trabalho). Responde em portugues, " +
           "de forma direta e curta.",
       },
-      ...(history || []).map((h: any) => ({ role: h.role, content: h.content })),
+      // So as ultimas 20 mensagens — o historico crescia sem limite em cada pedido.
+      ...(Array.isArray(history) ? history : [])
+        .filter((h: any) => (h.role === "user" || h.role === "assistant") && typeof h.content === "string")
+        .slice(-20)
+        .map((h: any) => ({ role: h.role, content: h.content })),
       { role: "user", content: message },
     ];
 

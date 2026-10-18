@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
+import { localDateKey } from "@/lib/dates";
+import { plainTitle } from "@/lib/text";
 import { PILLARS, TaskCache } from "@/lib/types";
 import PillarCard from "@/components/PillarCard";
 import { LineChartCard, DonutCard, TaskListCard, ListItem } from "@/components/DashboardCharts";
@@ -20,7 +22,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [syncTime, setSyncTime] = useState<string>("--:--");
+  const [lastSync, setLastSync] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
 
@@ -32,12 +34,17 @@ export default function DashboardPage() {
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const res = await fetch("/api/sync", { method: "POST" });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      const data = await api<{ summary: Record<string, any> }>("/api/sync", { method: "POST" });
+      const s = data.summary;
+      const closed = (s.todoist_closed || 0) + (s.ticktick_closed || 0);
+      const errors = ["todoist_error", "ticktick_error", "calendar_error", "classify_error", "agenda_error"]
+        .filter((k) => s[k])
+        .map((k) => s[k]);
       setSyncMsg(
-        `Todoist: ${data.summary.todoist} · TickTick: ${data.summary.ticktick} · Calendar: ${data.summary.calendar}` +
-          (data.summary.classified ? ` · ${data.summary.classified} classificadas` : "")
+        `Todoist: ${s.todoist} · TickTick: ${s.ticktick} · Calendar: ${s.calendar}` +
+          (s.classified ? ` · ${s.classified} classificadas` : "") +
+          (closed ? ` · ${closed} já concluídas na origem` : "") +
+          (errors.length ? ` · ERROS: ${errors.join(" | ")}` : "")
       );
       await load();
     } catch (e: any) {
@@ -49,45 +56,40 @@ export default function DashboardPage() {
 
   async function load() {
     setError(null);
-    const today = new Date().toISOString().slice(0, 10);
-    const { data, error } = await supabase
-      .from("tasks_cache")
-      .select("*")
-      .eq("status", "open");
-
-    if (error) {
-      setError(error.message);
+    const today = localDateKey();
+    let data: { tasks: TaskCache[]; last_sync_at: string | null };
+    try {
+      data = await api("/api/tasks");
+    } catch (e: any) {
+      setError(e.message);
       return;
     }
 
-    const rows = (data || []) as TaskCache[];
+    const rows = data.tasks;
     setTasks(rows);
+    setLastSync(data.last_sync_at);
 
     const acc: PillarCounts = {};
     for (const p of PILLARS) acc[p.key] = { today: 0, overdue: 0 };
     for (const t of rows) {
-      if (!t.pillar || !acc[t.pillar]) continue;
-      if (t.due && t.due < today) acc[t.pillar].overdue += 1;
-      else acc[t.pillar].today += 1;
+      if (!t.pillar || !acc[t.pillar] || !t.due) continue;
+      if (t.due < today) acc[t.pillar].overdue += 1;
+      else if (t.due === today) acc[t.pillar].today += 1;
     }
     setCounts(acc);
-    setSyncTime(new Date().toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }));
   }
 
   async function completeTask(id: string) {
     setCompletingIds((prev) => new Set(prev).add(id));
     try {
-      const res = await fetch("/api/tasks/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: id }),
+      const data = await api<{ remote_synced: boolean; remote_error: string | null }>("/api/tasks/complete", {
+        body: { task_id: id },
       });
-      const data = await res.json();
       if (!data.remote_synced && data.remote_error) {
         setSyncMsg(`Concluída localmente, mas falhou no app de origem: ${data.remote_error}`);
       }
-    } catch {
-      // se a rota falhar por completo, ainda assim tenta refletir localmente
+    } catch (e: any) {
+      setSyncMsg("Erro ao concluir: " + e.message);
     }
     await load();
     setCompletingIds((prev) => {
@@ -97,22 +99,31 @@ export default function DashboardPage() {
     });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const rows = tasks || [];
   const todoistTasks = rows.filter((t) => t.source === "todoist");
   const ticktickTasks = rows.filter((t) => t.source === "ticktick");
   const overdueRows = rows.filter((t) => t.due && t.due < today);
-  const todayRows = rows.filter((t) => !t.due || t.due >= today);
+  // "Para hoje" = so o que vence hoje. Antes entravam tambem as tarefas sem
+  // data e as futuras (ex: os tutoriais do Todoist apareciam como "hoje").
+  const todayRows = rows.filter((t) => t.due === today);
+  const undatedRows = rows.filter((t) => !t.due);
 
   const toListItem = (t: TaskCache): ListItem => {
     const meta = pillarMeta(t.pillar);
-    return { id: t.id, title: t.content, date: t.due || "", pillarLabel: meta.label, pillarColor: meta.color };
+    return { id: t.id, title: plainTitle(t.content), date: t.due || "", pillarLabel: meta.label, pillarColor: meta.color };
   };
 
   const todoistOverdue = todoistTasks.filter((t) => t.due && t.due < today).length;
-  const todoistToday = todoistTasks.length - todoistOverdue;
+  const todoistToday = todoistTasks.filter((t) => t.due === today).length;
   const ticktickOverdue = ticktickTasks.filter((t) => t.due && t.due < today).length;
-  const ticktickToday = ticktickTasks.length - ticktickOverdue;
+  const ticktickToday = ticktickTasks.filter((t) => t.due === today).length;
+
+  const syncAgeH = lastSync ? (Date.now() - new Date(lastSync).getTime()) / 3600000 : null;
+  const syncLabel = lastSync
+    ? new Date(lastSync).toLocaleString("pt-PT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "nunca";
+  const syncStale = syncAgeH === null || syncAgeH > 3;
 
   return (
     <div className="flex-1 min-w-0 p-4 sm:p-[28px_36px] flex flex-col gap-6">
@@ -124,7 +135,10 @@ export default function DashboardPage() {
               OPERACIONAL
             </span>
           </div>
-          <div className="font-mono font-medium text-[12px] text-white/40 mt-1.5">sync {syncTime}</div>
+          <div className={"font-mono font-medium text-[12px] mt-1.5 " + (syncStale ? "text-[#E8B93F]" : "text-white/40")}>
+            último sync {syncLabel}
+            {syncStale && " · desatualizado"}
+          </div>
         </div>
         <div className="flex gap-2 flex-none">
           <button
@@ -199,6 +213,18 @@ export default function DashboardPage() {
           completingIds={completingIds}
         />
       </div>
+
+      {undatedRows.length > 0 && (
+        <TaskListCard
+          title="Sem data"
+          items={undatedRows.map(toListItem)}
+          accentColor="rgba(244,244,242,0.5)"
+          borderColor="rgba(255,255,255,0.08)"
+          dateColor="rgba(244,244,242,0.4)"
+          onComplete={completeTask}
+          completingIds={completingIds}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
-import { addTodoistTask } from "@/lib/integrations";
+import { addTodoistTask, labelTodoistTask } from "@/lib/integrations";
+import { plainTitle } from "@/lib/text";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "integracao nao esta ligada" }, { status: 400 });
     }
 
-    const { data: task } = await sb.from("tasks_cache").select("id, content").eq("id", task_id).single();
+    const { data: task } = await sb.from("tasks_cache").select("id, content, source").eq("id", task_id).single();
     if (!task) return NextResponse.json({ error: "tarefa nao encontrada" }, { status: 404 });
 
     const { data: tools } = await sb
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     let chosenTool = tools?.[0]?.name || null;
     if (groqKey && tools && tools.length > 0) {
-      const prompt = `Tarefa: "${task.content}". Ferramentas disponiveis: ${tools
+      const prompt = `Tarefa: "${plainTitle(task.content)}". Ferramentas disponiveis: ${tools
         .map((t) => `${t.name} (${t.description})`)
         .join("; ")}. Responde APENAS com o nome exato da ferramenta mais adequada.`;
       try {
@@ -62,10 +63,14 @@ export async function POST(req: NextRequest) {
     const integName = (integ.name || "").toLowerCase();
 
     if (integName.includes("todoist")) {
-      const result = await addTodoistTask(task.content);
+      const result =
+        task.source === "todoist" ? await labelTodoistTask(task.id) : await addTodoistTask(task.content);
       if (result.ok) {
         status = "agendado";
-        executionNote = `Tarefa criada no Todoist (id ${result.id}), rotulada 'delegada-agente'.`;
+        executionNote =
+          task.source === "todoist"
+            ? `Tarefa existente no Todoist rotulada 'delegada-agente'.`
+            : `Tarefa criada no Todoist (id ${result.id}), rotulada 'delegada-agente'.`;
       } else {
         executionNote = `Falha ao executar no Todoist: ${result.error}`;
       }

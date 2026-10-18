@@ -4,3 +4,5 @@ node_modules/
 .env
 .open-next/
 .wrangler/
+.dev.vars
+tsconfig.tsbuildinfo

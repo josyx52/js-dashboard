@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { Integration, IntegrationTool } from "@/lib/types";
 import { IconPlug, IconFlask } from "@/components/icons";
 
@@ -23,12 +23,12 @@ export default function IntegracoesPage() {
   }, []);
 
   async function load() {
-    const { data, error } = await supabase
-      .from("integrations")
-      .select("id, name, description, connected, capabilities, created_at")
-      .order("created_at", { ascending: false });
-    if (error) setError(error.message);
-    else setItems(data as Integration[]);
+    try {
+      const data = await api<{ integrations: Integration[] }>("/api/integrations");
+      setItems(data.integrations);
+    } catch (e: any) {
+      setError(e.message);
+    }
   }
 
   async function createIntegration(e: React.FormEvent) {
@@ -76,11 +76,13 @@ export default function IntegracoesPage() {
   async function openLab(item: Integration) {
     setLabFor(item);
     setLabTools(null);
-    const { data } = await supabase
-      .from("integration_tools")
-      .select("*")
-      .eq("integration_id", item.id);
-    setLabTools((data as IntegrationTool[]) || []);
+    try {
+      const data = await api<{ tools: IntegrationTool[] }>(`/api/integrations/tools?integration_id=${item.id}`);
+      setLabTools(data.tools);
+    } catch (e: any) {
+      setError(e.message);
+      setLabTools([]);
+    }
   }
 
   if (labFor) {

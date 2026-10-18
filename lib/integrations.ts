@@ -1,3 +1,5 @@
+import { dateInTimeZone } from "@/lib/dates";
+
 export interface RawTask {
   id: string;
   content: string;
@@ -7,12 +9,21 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "timezone-fix-6";
+export const DEPLOY_MARKER = "auth-sync-fix-1";
 
 
-export async function fetchTodoist(): Promise<RawTask[]> {
+// Resultado de uma leitura a um provedor. `ok: false` quando o token falta
+// ou o pedido falha — nesse caso o sync NAO pode concluir que as tarefas
+// desapareceram (uma lista vazia por erro nao e o mesmo que zero tarefas).
+export interface FetchResult<T> {
+  ok: boolean;
+  items: T[];
+  error?: string;
+}
+
+export async function fetchTodoist(): Promise<FetchResult<RawTask>> {
   const token = process.env.TODOIST_API_TOKEN;
-  if (!token) return [];
+  if (!token) return { ok: false, items: [], error: "TODOIST_API_TOKEN nao configurado" };
   const h = { Authorization: `Bearer ${token}` };
   const out: RawTask[] = [];
   let cursor: string | null = null;
@@ -21,14 +32,14 @@ export async function fetchTodoist(): Promise<RawTask[]> {
     url.searchParams.set("limit", "200");
     if (cursor) url.searchParams.set("cursor", cursor);
     const r = await fetch(url, { headers: h });
-    if (!r.ok) break;
+    if (!r.ok) return { ok: false, items: out, error: `Todoist HTTP ${r.status}` };
     const j: any = await r.json();
     for (const t of j.results || []) {
-      out.push({ id: t.id, content: t.content, due: t.due?.date || null });
+      out.push({ id: t.id, content: t.content, due: t.due?.date ? String(t.due.date).slice(0, 10) : null });
     }
     cursor = j.next_cursor || null;
   } while (cursor);
-  return out;
+  return { ok: true, items: out };
 }
 
 // Cria uma tarefa real no Todoist — usada pela execucao real da delegacao GTD.
@@ -48,29 +59,55 @@ export async function addTodoistTask(
   return { ok: true, id: j.id };
 }
 
-export async function fetchTickTick(): Promise<RawTask[]> {
+// Delegar uma tarefa que JA esta no Todoist: so acrescenta o rotulo, em vez
+// de criar uma copia (antes ficavam duas tarefas iguais).
+export async function labelTodoistTask(
+  taskId: string,
+  label = "delegada-agente"
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const token = process.env.TODOIST_API_TOKEN;
+  if (!token) return { ok: false, error: "TODOIST_API_TOKEN nao configurado" };
+  const h = { Authorization: `Bearer ${token}` };
+  const g = await fetch(`https://api.todoist.com/api/v1/tasks/${taskId}`, { headers: h });
+  if (!g.ok) return { ok: false, error: `Todoist HTTP ${g.status}` };
+  const task: any = await g.json();
+  const labels: string[] = task.labels || [];
+  if (!labels.includes(label)) {
+    const r = await fetch(`https://api.todoist.com/api/v1/tasks/${taskId}`, {
+      method: "POST",
+      headers: { ...h, "Content-Type": "application/json" },
+      body: JSON.stringify({ labels: [...labels, label] }),
+    });
+    if (!r.ok) return { ok: false, error: JSON.stringify(await r.json().catch(() => ({}))) };
+  }
+  return { ok: true, id: taskId };
+}
+
+export async function fetchTickTick(): Promise<FetchResult<RawTask>> {
   const token = process.env.TICKTICK_ACCESS_TOKEN;
-  if (!token) return [];
+  if (!token) return { ok: false, items: [], error: "TICKTICK_ACCESS_TOKEN nao configurado" };
   const h = { Authorization: `Bearer ${token}` };
   const out: RawTask[] = [];
   const projR = await fetch("https://api.ticktick.com/open/v1/project", { headers: h });
-  if (!projR.ok) return [];
+  if (!projR.ok) return { ok: false, items: [], error: `TickTick HTTP ${projR.status}` };
   const projects: any[] = await projR.json();
   for (const p of projects) {
     const dr = await fetch(`https://api.ticktick.com/open/v1/project/${p.id}/data`, { headers: h });
-    if (!dr.ok) continue;
+    if (!dr.ok) return { ok: false, items: out, error: `TickTick projeto ${p.id} HTTP ${dr.status}` };
     const d: any = await dr.json();
     for (const t of d.tasks || []) {
       if (t.status === 2) continue; // ja concluida
       out.push({
         id: `tt-${t.id}`,
         content: t.title,
-        due: t.dueDate ? String(t.dueDate).slice(0, 10) : null,
-        projectId: p.id,
+        // dueDate vem em UTC; converter para a data civil no fuso da tarefa
+        // (senao uma tarefa de dia 28 em Lisboa ficava no dia 27).
+        due: t.dueDate ? dateInTimeZone(new Date(String(t.dueDate).replace(/([+-]\d{2})(\d{2})$/, "$1:$2")), t.timeZone || "Europe/Lisbon") : null,
+        projectId: t.projectId || p.id,
       });
     }
   }
-  return out;
+  return { ok: true, items: out };
 }
 
 // Validacao real do token contra o provedor — so para integracoes
@@ -217,22 +254,29 @@ export interface RawEvent {
 }
 
 export async function fetchCalendarEvents(timeMin: string, timeMax: string): Promise<RawEvent[]> {
+  return (await fetchCalendarEventsResult(timeMin, timeMax)).items;
+}
+
+export async function fetchCalendarEventsResult(timeMin: string, timeMax: string): Promise<FetchResult<RawEvent>> {
   const token = await googleAccessToken();
-  if (!token) return [];
+  if (!token) return { ok: false, items: [], error: "sem acesso ao Google Calendar (credenciais ou refresh token)" };
   const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
   url.searchParams.set("timeMin", timeMin);
   url.searchParams.set("timeMax", timeMax);
   url.searchParams.set("singleEvents", "true");
   url.searchParams.set("orderBy", "startTime");
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!r.ok) return [];
+  if (!r.ok) return { ok: false, items: [], error: `Calendar HTTP ${r.status}` };
   const j: any = await r.json();
-  return (j.items || []).map((e: any) => ({
-    id: e.id,
-    summary: e.summary || "(sem título)",
-    start: e.start?.dateTime || e.start?.date,
-    end: e.end?.dateTime || e.end?.date,
-  }));
+  return {
+    ok: true,
+    items: (j.items || []).map((e: any) => ({
+      id: e.id,
+      summary: e.summary || "(sem título)",
+      start: e.start?.dateTime || e.start?.date,
+      end: e.end?.dateTime || e.end?.date,
+    })),
+  };
 }
 
 export async function addCalendarEvent(

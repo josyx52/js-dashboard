@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
+import { plainTitle } from "@/lib/text";
 import { TaskCache, Integration } from "@/lib/types";
 import { compressImageToBase64 } from "@/lib/image";
 
@@ -187,10 +188,16 @@ function GtdFlow() {
   }, []);
 
   async function load() {
-    const { data: t } = await supabase.from("tasks_cache").select("*").eq("status", "open").eq("delegable", true);
-    setTasks((t as TaskCache[]) || []);
-    const { data: i } = await supabase.from("integrations").select("id, name, description, connected, capabilities, created_at");
-    setIntegrations((i as Integration[]) || []);
+    try {
+      const [t, i] = await Promise.all([
+        api<{ tasks: TaskCache[] }>("/api/tasks?delegable=1"),
+        api<{ integrations: Integration[] }>("/api/integrations"),
+      ]);
+      setTasks(t.tasks);
+      setIntegrations(i.integrations);
+    } catch (e: any) {
+      window.alert("Erro ao carregar: " + e.message);
+    }
   }
 
   async function delegate(task: TaskCache, integrationId: string) {
@@ -206,7 +213,7 @@ function GtdFlow() {
       setDelegated((p) => [
         ...p,
         {
-          title: task.content,
+          title: plainTitle(task.content),
           status: data.executed ? "AGENDADO" : "EM ANÁLISE (SIMULADO)",
           note: data.execution_note,
         },
@@ -285,7 +292,7 @@ function GtdFlow() {
               const connectedIntegrations = (integrations || []).filter((i) => i.connected);
               return (
                 <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "9px 12px" }}>
-                  <span style={{ flex: 1, font: "500 13px Inter,sans-serif", minWidth: 0 }}>{t.content}</span>
+                  <span style={{ flex: 1, font: "500 13px Inter,sans-serif", minWidth: 0 }}>{plainTitle(t.content)}</span>
                   {connectedIntegrations.length === 0 ? (
                     <span style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "6px 10px", background: "transparent", border: "1px dashed rgba(244,244,242,0.2)", borderRadius: 3, color: "rgba(244,244,242,0.35)", font: "700 9px 'JetBrains Mono',monospace" }}>
                       REQUER INTEGRAÇÃO
