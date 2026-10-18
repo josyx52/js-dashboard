@@ -47,7 +47,7 @@ classificação por pilares, e Gemini para analisar fotos de refeições.
 Migrações em `supabase/migrations/`, aplicadas por ordem no SQL Editor do Supabase.
 - `0009` — `daily_steps`, `sync_state`, remove a coluna legada `api_key_encrypted`,
   e não deixa criar integrações com nomes repetidos.
-- `0010` — fecha o RLS. **Só depois** de publicar a versão com login: a versão
+- `0010` — fecha o RLS (policies só para `service_role`). Já aplicada; a versão
   antiga lia a BD diretamente no browser e deixa de funcionar.
 
 ## Desenvolvimento

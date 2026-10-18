@@ -1,27 +1,16 @@
--- Aplicar SO DEPOIS do deploy da versao com login (middleware.ts): a versao
--- antiga le o Supabase direto do browser com a anon key e deixa de funcionar.
+-- Aplicado em producao a 18/10/2026, depois do deploy da versao com login.
 --
 -- Fecha o acesso anonimo. A anon key estava no bundle publico e as policies
--- "open access" (0002) deixavam qualquer pessoa ler e alterar tudo. Com RLS
--- ligado e sem policies, anon/authenticated nao veem nada; o servidor usa a
--- service role (que ignora RLS) e esta protegido pela sessao da app.
-drop policy if exists "open access" on tasks_cache;
-drop policy if exists "open access" on integrations;
-drop policy if exists "open access" on integration_tools;
-drop policy if exists "open access" on nutrition_logs;
-drop policy if exists "open access" on body_composition;
-drop policy if exists "open access" on agent_messages;
-drop policy if exists "open access" on delegations;
-drop policy if exists "open access" on agenda_cache;
-drop policy if exists "open access" on user_profile;
-drop policy if exists "open access" on daily_steps;
-
-alter table tasks_cache enable row level security;
-alter table integrations enable row level security;
-alter table integration_tools enable row level security;
-alter table nutrition_logs enable row level security;
-alter table body_composition enable row level security;
-alter table agent_messages enable row level security;
-alter table delegations enable row level security;
-alter table agenda_cache enable row level security;
-alter table user_profile enable row level security;
+-- "open access" (0002) deixavam qualquer pessoa ler e alterar tudo. As
+-- policies passam a valer so para service_role (o servidor); anon e
+-- authenticated ficam sem acesso. daily_steps e sync_state (0009) nao tem
+-- policies nenhumas.
+alter policy "open access" on tasks_cache to service_role;
+alter policy "open access" on integrations to service_role;
+alter policy "open access" on integration_tools to service_role;
+alter policy "open access" on nutrition_logs to service_role;
+alter policy "open access" on body_composition to service_role;
+alter policy "open access" on agent_messages to service_role;
+alter policy "open access" on delegations to service_role;
+alter policy "open access" on agenda_cache to service_role;
+alter policy "open access" on user_profile to service_role;
