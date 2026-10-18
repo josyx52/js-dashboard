@@ -11,6 +11,15 @@ export const dynamic = "force-dynamic";
 
 type PillarCounts = Record<string, { today: number; overdue: number }>;
 
+// Recorrentes (ex: rotina diaria) contam sempre como "hoje", mesmo que a
+// ultima ocorrencia tenha ficado por marcar — senao "Para hoje" ficava vazio
+// e a rotina inteira aparecia como atrasada ha meses.
+function bucket(t: TaskCache, today: string): "overdue" | "today" | "future" | "undated" {
+  if (!t.due) return "undated";
+  if (t.due === today || (t.recurring && t.due < today)) return "today";
+  return t.due < today ? "overdue" : "future";
+}
+
 function pillarMeta(key: string | null) {
   const p = PILLARS.find((p) => p.key === key);
   return { label: p ? p.label : "—", color: p ? p.color : "#666" };
@@ -72,9 +81,10 @@ export default function DashboardPage() {
     const acc: PillarCounts = {};
     for (const p of PILLARS) acc[p.key] = { today: 0, overdue: 0 };
     for (const t of rows) {
-      if (!t.pillar || !acc[t.pillar] || !t.due) continue;
-      if (t.due < today) acc[t.pillar].overdue += 1;
-      else if (t.due === today) acc[t.pillar].today += 1;
+      if (!t.pillar || !acc[t.pillar]) continue;
+      const b = bucket(t, today);
+      if (b === "overdue") acc[t.pillar].overdue += 1;
+      else if (b === "today") acc[t.pillar].today += 1;
     }
     setCounts(acc);
   }
@@ -103,21 +113,22 @@ export default function DashboardPage() {
   const rows = tasks || [];
   const todoistTasks = rows.filter((t) => t.source === "todoist");
   const ticktickTasks = rows.filter((t) => t.source === "ticktick");
-  const overdueRows = rows.filter((t) => t.due && t.due < today);
+  const overdueRows = rows.filter((t) => bucket(t, today) === "overdue");
   // "Para hoje" = so o que vence hoje. Antes entravam tambem as tarefas sem
   // data e as futuras (ex: os tutoriais do Todoist apareciam como "hoje").
-  const todayRows = rows.filter((t) => t.due === today);
-  const undatedRows = rows.filter((t) => !t.due);
+  const todayRows = rows.filter((t) => bucket(t, today) === "today");
+  const undatedRows = rows.filter((t) => bucket(t, today) === "undated");
 
   const toListItem = (t: TaskCache): ListItem => {
     const meta = pillarMeta(t.pillar);
-    return { id: t.id, title: plainTitle(t.content), date: t.due || "", pillarLabel: meta.label, pillarColor: meta.color };
+    const date = t.recurring && t.due && t.due < today ? "recorrente" : t.due || "";
+    return { id: t.id, title: plainTitle(t.content), date, pillarLabel: meta.label, pillarColor: meta.color };
   };
 
-  const todoistOverdue = todoistTasks.filter((t) => t.due && t.due < today).length;
-  const todoistToday = todoistTasks.filter((t) => t.due === today).length;
-  const ticktickOverdue = ticktickTasks.filter((t) => t.due && t.due < today).length;
-  const ticktickToday = ticktickTasks.filter((t) => t.due === today).length;
+  const todoistOverdue = todoistTasks.filter((t) => bucket(t, today) === "overdue").length;
+  const todoistToday = todoistTasks.filter((t) => bucket(t, today) === "today").length;
+  const ticktickOverdue = ticktickTasks.filter((t) => bucket(t, today) === "overdue").length;
+  const ticktickToday = ticktickTasks.filter((t) => bucket(t, today) === "today").length;
 
   const syncAgeH = lastSync ? (Date.now() - new Date(lastSync).getTime()) / 3600000 : null;
   const syncLabel = lastSync

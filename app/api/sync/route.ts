@@ -41,6 +41,7 @@ export async function POST() {
             content: t.content,
             due: t.due,
             source_project_id: t.projectId || null,
+            recurring: !!t.recurring,
             status: "open",
             updated_at: now,
           })),

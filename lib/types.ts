@@ -18,6 +18,7 @@ export interface TaskCache {
   status: "open" | "done";
   pillar: Pillar | null;
   delegable: boolean;
+  recurring?: boolean;
   updated_at: string;
 }
 

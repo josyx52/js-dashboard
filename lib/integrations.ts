@@ -5,11 +5,12 @@ export interface RawTask {
   content: string;
   due: string | null;
   projectId?: string;
+  recurring?: boolean;
 }
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "auth-sync-fix-1";
+export const DEPLOY_MARKER = "recurring-today-1";
 
 
 // Resultado de uma leitura a um provedor. `ok: false` quando o token falta
@@ -35,7 +36,12 @@ export async function fetchTodoist(): Promise<FetchResult<RawTask>> {
     if (!r.ok) return { ok: false, items: out, error: `Todoist HTTP ${r.status}` };
     const j: any = await r.json();
     for (const t of j.results || []) {
-      out.push({ id: t.id, content: t.content, due: t.due?.date ? String(t.due.date).slice(0, 10) : null });
+      out.push({
+        id: t.id,
+        content: t.content,
+        due: t.due?.date ? String(t.due.date).slice(0, 10) : null,
+        recurring: !!t.due?.is_recurring,
+      });
     }
     cursor = j.next_cursor || null;
   } while (cursor);
@@ -104,6 +110,7 @@ export async function fetchTickTick(): Promise<FetchResult<RawTask>> {
         // (senao uma tarefa de dia 28 em Lisboa ficava no dia 27).
         due: t.dueDate ? dateInTimeZone(new Date(String(t.dueDate).replace(/([+-]\d{2})(\d{2})$/, "$1:$2")), t.timeZone || "Europe/Lisbon") : null,
         projectId: t.projectId || p.id,
+        recurring: !!t.repeatFlag,
       });
     }
   }
