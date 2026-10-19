@@ -5,7 +5,7 @@ import { localDateKey } from "@/lib/dates";
 import { plainTitle } from "@/lib/text";
 import { PILLARS, TaskCache } from "@/lib/types";
 import PillarCard from "@/components/PillarCard";
-import { LineChartCard, DonutCard, TaskListCard, ListItem } from "@/components/DashboardCharts";
+import { PillarStackCard, HistoryCard, TaskListCard, ListItem, type HistoryRow } from "@/components/DashboardCharts";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ rows: HistoryRow[]; days: number; today: string } | null>(null);
   const [updating, setUpdating] = useState(false);
   const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
 
@@ -74,6 +75,10 @@ export default function DashboardPage() {
       return;
     }
 
+    api<{ rows: HistoryRow[]; days: number; today: string }>("/api/history?days=14")
+      .then(setHistory)
+      .catch(() => setHistory(null));
+
     const rows = data.tasks;
     setTasks(rows);
     setLastSync(data.last_sync_at);
@@ -111,8 +116,6 @@ export default function DashboardPage() {
 
   const today = localDateKey();
   const rows = tasks || [];
-  const todoistTasks = rows.filter((t) => t.source === "todoist");
-  const ticktickTasks = rows.filter((t) => t.source === "ticktick");
   const overdueRows = rows.filter((t) => bucket(t, today) === "overdue");
   // "Para hoje" = so o que vence hoje. Antes entravam tambem as tarefas sem
   // data e as futuras (ex: os tutoriais do Todoist apareciam como "hoje").
@@ -125,10 +128,16 @@ export default function DashboardPage() {
     return { id: t.id, title: plainTitle(t.content), date, pillarLabel: meta.label, pillarColor: meta.color };
   };
 
-  const todoistOverdue = todoistTasks.filter((t) => bucket(t, today) === "overdue").length;
-  const todoistToday = todoistTasks.filter((t) => bucket(t, today) === "today").length;
-  const ticktickOverdue = ticktickTasks.filter((t) => bucket(t, today) === "overdue").length;
-  const ticktickToday = ticktickTasks.filter((t) => bucket(t, today) === "today").length;
+  const pillarRows = PILLARS.map((p) => {
+    const mine = rows.filter((t) => t.pillar === p.key);
+    return {
+      label: p.label,
+      color: p.color,
+      overdue: mine.filter((t) => bucket(t, today) === "overdue").length,
+      today: mine.filter((t) => bucket(t, today) === "today").length,
+      undated: mine.filter((t) => bucket(t, today) === "undated").length,
+    };
+  });
 
   const syncAgeH = lastSync ? (Date.now() - new Date(lastSync).getTime()) / 3600000 : null;
   const syncLabel = lastSync
@@ -197,11 +206,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:[grid-template-columns:1.3fr_1fr] gap-4">
-        <LineChartCard
-          todoist={[todoistOverdue, todoistToday]}
-          ticktick={[ticktickOverdue, ticktickToday]}
-        />
-        <DonutCard overdue={overdueRows.length} today={todayRows.length} />
+        <PillarStackCard rows={pillarRows} />
+        {history ? (
+          <HistoryCard rows={history.rows} days={history.days} today={history.today} />
+        ) : (
+          <div className="animate-pulse" style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, minHeight: 240 }} />
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
