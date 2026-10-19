@@ -14,7 +14,7 @@ export async function GET() {
     const [{ data: msgs, error }, snapshot, { data: memories }] = await Promise.all([
       sb
         .from("holiday_messages")
-        .select("id, role, content, created_at")
+        .select("id, role, content, created_at, automation_id")
         .order("created_at", { ascending: false })
         .limit(40),
       buildSnapshot(sb),
@@ -26,7 +26,15 @@ export async function GET() {
         .order("created_at", { ascending: false }),
     ]);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    const messages = (msgs || []).reverse();
+    // Nome da automacao que gerou cada mensagem (para a etiqueta no chat).
+    const autoIds = [...new Set((msgs || []).map((m) => m.automation_id).filter(Boolean))];
+    const { data: autos } = autoIds.length
+      ? await sb.from("holiday_automations").select("id, name").in("id", autoIds)
+      : { data: [] as { id: string; name: string }[] };
+    const autoName = new Map((autos || []).map((a) => [a.id, a.name]));
+    const messages = (msgs || [])
+      .reverse()
+      .map((m) => ({ ...m, automation_name: m.automation_id ? autoName.get(m.automation_id) || "automação" : null }));
     const ids = messages.map((m) => m.id);
     const { data: actions } = ids.length
       ? await sb

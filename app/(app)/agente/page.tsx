@@ -5,7 +5,7 @@ import HolidayChat from "@/components/HolidayChat";
 // (antiga calculadora) e GTD (que tarefas sao tuas e quais delegaste a ele).
 export default function AgentePage() {
   return (
-    <div className="flex flex-col h-screen box-border p-4 sm:p-[28px_36px]">
+    <div className="flex flex-col h-[calc(100dvh-57px)] md:h-screen box-border p-3 sm:p-[28px_36px]">
       <HolidayChat />
     </div>
   );
