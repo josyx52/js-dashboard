@@ -4,14 +4,9 @@ import { api } from "@/lib/api";
 import { plainTitle } from "@/lib/text";
 import { TaskCache, Integration } from "@/lib/types";
 import { compressImageToBase64 } from "@/lib/image";
+import HolidayChat from "@/components/HolidayChat";
 
 type Mode = "chat" | "calculadora" | "gtd";
-
-interface Msg {
-  role: "user" | "assistant";
-  content: string;
-  time: string;
-}
 
 const CAT_COLORS: Record<string, string> = {
   Deus: "#E8B93F", Saúde: "#F54E00", Família: "#8B7CF6",
@@ -21,17 +16,10 @@ function chipStyle(cat: string): React.CSSProperties {
   const c = CAT_COLORS[cat] || "rgba(244,244,242,0.4)";
   return { font: "600 10px 'JetBrains Mono',monospace", letterSpacing: "0.03em", color: c, background: `${c}1a`, border: `1px solid ${c}40`, padding: "3px 8px", borderRadius: 3, flexShrink: 0 };
 }
-function nowTime() {
-  return new Date().toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
-}
 
 export default function AgentePage() {
   const [mode, setMode] = useState<Mode>("chat");
-  const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "Olá. Sobre o que precisas de ajuda?", time: nowTime() },
-  ]);
-  const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoResult, setPhotoResult] = useState<{ label: string; kcal: number; protein_g?: number | null; carbs_g?: number | null; fat_g?: number | null } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -39,35 +27,14 @@ export default function AgentePage() {
 
   useEffect(() => {
     boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight });
-  }, [messages, photoResult]);
-
-  async function send() {
-    const text = draft.trim();
-    if (!text || loading) return;
-    const history = messages.map((m) => ({ role: m.role, content: m.content }));
-    setMessages((p) => [...p, { role: "user", content: text, time: nowTime() }]);
-    setDraft("");
-    setLoading(true);
-    try {
-      const res = await fetch("/api/agent/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history }),
-      });
-      const data = await res.json();
-      setMessages((p) => [...p, { role: "assistant", content: data.reply || data.error || "(erro)", time: nowTime() }]);
-    } catch (e: any) {
-      setMessages((p) => [...p, { role: "assistant", content: "Erro: " + e.message, time: nowTime() }]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  }, [photoResult]);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setAnalyzing(true);
     setPhotoResult(null);
+    setPhotoError(null);
     try {
       const base64 = await compressImageToBase64(file);
       const res = await fetch("/api/nutrition/photo", {
@@ -85,7 +52,7 @@ export default function AgentePage() {
         fat_g: data.log.fat_g,
       });
     } catch (e: any) {
-      setMessages((p) => [...p, { role: "assistant", content: "Erro na foto: " + e.message, time: nowTime() }]);
+      setPhotoError(e.message);
     } finally {
       setAnalyzing(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -101,11 +68,13 @@ export default function AgentePage() {
   return (
     <div className="flex flex-col h-screen box-border p-4 sm:p-[28px_36px]">
       <div style={{ display: "flex", gap: 6, paddingBottom: 0, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-        <button onClick={() => setMode("chat")} style={tabStyle(mode === "chat", "#F4F4F2")}>CHAT</button>
+        <button onClick={() => setMode("chat")} style={tabStyle(mode === "chat", "#F4F4F2")}>HOLIDAY</button>
         <button onClick={() => setMode("calculadora")} style={tabStyle(mode === "calculadora", "#F54E00")}>CALCULADORA</button>
         <button onClick={() => setMode("gtd")} style={tabStyle(mode === "gtd", "#8B7CF6")}>GTD</button>
       </div>
 
+      {mode === "chat" && <HolidayChat />}
+      {mode !== "chat" && (
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", border: "1px solid rgba(255,255,255,0.08)", borderTop: "none", background: "#14161B", borderRadius: "0 0 6px 6px", overflow: "hidden" }}>
         <div ref={boxRef} style={{ flex: 1, padding: 18, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
           {mode === "calculadora" && photoResult && (
@@ -127,26 +96,19 @@ export default function AgentePage() {
 
           {mode === "gtd" && <GtdFlow />}
 
-          {mode === "chat" && messages.map((m, i) => (
-            <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "70%" }}>
-              <div style={{
-                padding: "11px 14px", borderRadius: 6, font: "500 13px Inter,sans-serif", lineHeight: 1.45,
-                background: m.role === "user" ? "#F54E00" : "#1C1E24", color: m.role === "user" ? "#0B0C10" : "#F4F4F2",
-                border: m.role === "user" ? "1px solid transparent" : "1px solid rgba(255,255,255,0.08)",
-              }}>
-                {m.content}
-              </div>
-              <span style={{ font: "500 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.3)", marginTop: 4, display: "block" }}>{m.time}</span>
+          {mode === "calculadora" && photoError && (
+            <div style={{ font: "500 12px 'JetBrains Mono',monospace", color: "#FF5F5F" }}>Erro na foto: {photoError}</div>
+          )}
+          {mode === "calculadora" && !photoResult && !analyzing && !photoError && (
+            <div style={{ font: "500 12.5px Inter,sans-serif", color: "rgba(244,244,242,0.4)" }}>
+              Envia a foto de um prato — fica registado na Nutrição com calorias e macros.
             </div>
-          ))}
-          {mode === "chat" && loading && (
-            <div style={{ alignSelf: "flex-start", font: "500 12px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>a processar…</div>
           )}
         </div>
 
-        {mode !== "gtd" && (
+        {mode === "calculadora" && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 14, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-            {mode === "calculadora" && (
+            {(
               <label style={{ width: 38, height: 38, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 6, cursor: "pointer" }}>
                 <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
                 <svg viewBox="0 0 24 24" style={{ width: 16, height: 16 }}>
@@ -156,23 +118,13 @@ export default function AgentePage() {
                 </svg>
               </label>
             )}
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") send(); }}
-              placeholder="Pergunte ao agente…"
-              style={{ flex: 1, background: "#0B0C10", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "10px 12px", color: "#F4F4F2", font: "500 13px Inter,sans-serif", outline: "none" }}
-            />
-            <button
-              onClick={send}
-              disabled={loading}
-              style={{ padding: "10px 18px", background: "#F54E00", border: "none", borderRadius: 4, color: "#0B0C10", font: "700 12px 'JetBrains Mono',monospace", cursor: "pointer", opacity: loading ? 0.5 : 1 }}
-            >
-              ENVIAR
-            </button>
+            <span style={{ font: "500 12px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>
+              {analyzing ? "a analisar…" : "carregar foto"}
+            </span>
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

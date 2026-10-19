@@ -19,7 +19,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  if (pathname === "/api/sync" && req.method === "POST") {
+  if ((pathname === "/api/sync" || pathname === "/api/holiday/briefing") && req.method === "POST") {
     const provided = req.headers.get("x-cron-key");
     if (provided && safeEqual(provided, await cronKey(secret))) return NextResponse.next();
   }

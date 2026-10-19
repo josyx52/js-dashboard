@@ -10,7 +10,7 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "recurring-today-1";
+export const DEPLOY_MARKER = "holiday-1";
 
 
 // Resultado de uma leitura a um provedor. `ok: false` quando o token falta
@@ -87,6 +87,39 @@ export async function labelTodoistTask(
     if (!r.ok) return { ok: false, error: JSON.stringify(await r.json().catch(() => ({}))) };
   }
   return { ok: true, id: taskId };
+}
+
+// Tarefa nova criada pelo Holiday (com aprovacao) — rotulo "holiday".
+export async function createTodoistTask(
+  content: string,
+  dueDate?: string | null
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const token = process.env.TODOIST_API_TOKEN;
+  if (!token) return { ok: false, error: "TODOIST_API_TOKEN nao configurado" };
+  const body: Record<string, unknown> = { content, labels: ["holiday"] };
+  if (dueDate) body.due_date = dueDate;
+  const r = await fetch("https://api.todoist.com/api/v1/tasks", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j: any = await r.json().catch(() => ({}));
+  if (!r.ok) return { ok: false, error: `Todoist HTTP ${r.status}: ${JSON.stringify(j)}` };
+  return { ok: true, id: j.id };
+}
+
+// Mudar a data de uma tarefa NAO recorrente (em recorrentes o due_date
+// substituia a regra de repeticao — o Holiday nao propoe isso).
+export async function rescheduleTodoistTask(taskId: string, dueDate: string): Promise<{ ok: boolean; error?: string }> {
+  const token = process.env.TODOIST_API_TOKEN;
+  if (!token) return { ok: false, error: "TODOIST_API_TOKEN nao configurado" };
+  const r = await fetch(`https://api.todoist.com/api/v1/tasks/${taskId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ due_date: dueDate }),
+  });
+  if (!r.ok) return { ok: false, error: `Todoist HTTP ${r.status}: ${JSON.stringify(await r.json().catch(() => ({})))}` };
+  return { ok: true };
 }
 
 export async function fetchTickTick(): Promise<FetchResult<RawTask>> {

@@ -13,14 +13,16 @@ export default {
       console.error("cron sync: APP_PASSWORD nao configurado");
       return;
     }
-    const req = new Request("https://cron.internal/api/sync", {
-      method: "POST",
-      headers: { "x-cron-key": await cronKey(env.APP_PASSWORD) },
-    });
-    ctx.waitUntil(
-      handler.fetch(req, env, ctx).then(async (res: Response) => {
-        console.log(`cron sync: HTTP ${res.status} ${await res.text()}`);
-      })
-    );
+    const key = await cronKey(env.APP_PASSWORD);
+    const call = async (path: string) => {
+      const res: Response = await handler.fetch(
+        new Request(`https://cron.internal${path}`, { method: "POST", headers: { "x-cron-key": key } }),
+        env,
+        ctx
+      );
+      console.log(`cron ${path}: HTTP ${res.status} ${(await res.text()).slice(0, 500)}`);
+    };
+    // Sync primeiro; depois o briefing do Holiday (so gera um por dia, a partir das 07h).
+    ctx.waitUntil(call("/api/sync").then(() => call("/api/holiday/briefing")));
   },
 };

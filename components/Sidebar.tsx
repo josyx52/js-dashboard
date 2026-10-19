@@ -8,7 +8,7 @@ const NAV = [
   { href: "/nutricao", label: "Nutrição", Icon: IconNutricao },
   { href: "/integracoes", label: "Integrações", Icon: IconPlug },
   { href: "/agendar", label: "Agendar", Icon: IconAgendar },
-  { href: "/agente", label: "Agente", Icon: IconAgente },
+  { href: "/agente", label: "Holiday", Icon: IconAgente },
 ];
 
 export default function Sidebar() {
