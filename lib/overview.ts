@@ -345,13 +345,20 @@ function buildActivity(raw: OverviewRaw, today: string, from: string, prevFrom: 
   // Rotina: tarefas recorrentes abertas x ultimos dias.
   const nDays = Math.min(days, 30);
   const routineDays = Array.from({ length: nDays }, (_, i) => addDays(today, i - nDays + 1));
-  const routine = raw.openTasks
-    .filter((t) => t.recurring)
-    .map((t) => {
-      const set = doneOn.get(t.id) || new Set();
-      const daysDone = routineDays.map((d) => set.has(d));
-      return { id: t.id, title: plainTitle(t.content), color: pillarOf(t.id, null).color, days: daysDone, done: daysDone.filter(Boolean).length };
-    })
+  // O mesmo habito pode existir no Todoist e no TickTick: junta pelo titulo
+  // (feito num dia = feito em qualquer um dos dois).
+  const habits = new Map<string, { id: string; title: string; color: string; days: boolean[]; done: number }>();
+  for (const t of raw.openTasks.filter((x) => x.recurring)) {
+    const title = plainTitle(t.content);
+    const key = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const set = doneOn.get(t.id) || new Set<string>();
+    const h = habits.get(key) || { id: t.id, title, color: pillarOf(t.id, null).color, days: routineDays.map(() => false), done: 0 };
+    h.days = h.days.map((v, i) => v || set.has(routineDays[i]));
+    if (h.color === NONE.color) h.color = pillarOf(t.id, null).color;
+    habits.set(key, h);
+  }
+  const routine = [...habits.values()]
+    .map((h) => ({ ...h, done: h.days.filter(Boolean).length }))
     .sort((a, b) => b.done - a.done || a.title.localeCompare(b.title));
 
   const since = raw.activity.reduce<string | null>((m, a) => (!m || a.completed_at < m ? a.completed_at : m), null);

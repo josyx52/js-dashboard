@@ -1,14 +1,11 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { localDateKey } from "@/lib/dates";
-import { plainTitle } from "@/lib/text";
-import { taskBucket } from "@/lib/task-bucket";
-import { PILLARS, PILLAR_STACK_ORDER, TaskCache } from "@/lib/types";
+import { PILLAR_STACK_ORDER, TaskCache } from "@/lib/types";
 import type { Overview } from "@/lib/overview";
 import { Badge, Button, Card, ColorDot, EmptyState, Page, PageHeader, Segmented, Skeleton, useToast } from "@/components/ui";
-import { TaskList, type TaskRow, type TaskTab } from "@/components/TaskList";
+import { TaskBoard } from "@/components/TaskBoard";
 import { AreaChart, BarList, CategoryColumns, ColumnChart, HabitGrid, Meter, SegmentBar, Sparkline, StackedColumns, VIZ, compact, shortDay } from "@/components/charts";
 import { cn } from "@/lib/cn";
 
@@ -113,7 +110,6 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<TaskCache[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [tab, setTab] = useState<TaskTab>("today");
 
   const load = useCallback(async (days: Range) => {
     const [o, t] = await Promise.allSettled([api<Overview>(`/api/overview?days=${days}`), api<{ tasks: TaskCache[] }>("/api/tasks")]);
@@ -132,8 +128,8 @@ export default function DashboardPage() {
     try {
       const { summary: s } = await api<{ summary: Record<string, any> }>("/api/sync", { method: "POST" });
       const closed = (s.todoist_closed || 0) + (s.ticktick_closed || 0);
-      const errors = ["todoist_error", "ticktick_error", "calendar_error", "classify_error", "agenda_error"].filter((k) => s[k]).map((k) => s[k]);
-      const detail = `Todoist ${s.todoist} · TickTick ${s.ticktick} · Calendar ${s.calendar}` + (closed ? ` · ${closed} concluídas na origem` : "");
+      const errors = ["todoist_error", "ticktick_error", "calendar_error", "classify_error", "agenda_error", "activity_error"].filter((k) => s[k]).map((k) => s[k]);
+      const detail = `Todoist ${s.todoist} · TickTick ${s.ticktick} · Calendar ${s.calendar}` + (closed ? ` · ${closed} concluídas na origem` : "") + (s.activity ? ` · ${s.activity} atividades no histórico` : "");
       if (errors.length) toast.error("Sincronizado com erros", `${detail}. ${errors.join(" | ")}`);
       else toast.success("Sincronizado", detail);
       await load(range);
@@ -143,40 +139,6 @@ export default function DashboardPage() {
       setSyncing(false);
     }
   }
-
-  async function completeTask(id: string) {
-    const task = tasks?.find((t) => t.id === id);
-    try {
-      const data = await api<{ remote_synced: boolean; remote_error: string | null }>("/api/tasks/complete", { body: { task_id: id } });
-      setTasks((prev) => prev?.filter((t) => t.id !== id) ?? prev);
-      if (!data.remote_synced && data.remote_error) toast.info("Concluída só aqui", `Falhou no app de origem: ${data.remote_error}`);
-      else toast.success("Tarefa concluída", task ? plainTitle(task.content) : undefined);
-      load(range);
-    } catch (e: any) {
-      toast.error("Não foi possível concluir", e.message);
-    }
-  }
-
-  const today = localDateKey();
-  const lists = useMemo(() => {
-    if (!tasks) return null;
-    const out: Record<TaskTab, TaskRow[]> = { today: [], overdue: [], undated: [] };
-    for (const t of tasks) {
-      const b = taskBucket(t.due, !!t.recurring, today);
-      if (b === "future") continue;
-      const p = PILLARS.find((x) => x.key === t.pillar);
-      out[b].push({
-        id: t.id,
-        title: plainTitle(t.content),
-        date: !t.due ? "" : t.recurring && t.due < today ? "rotina" : t.due === today ? "hoje" : shortDay(t.due),
-        pillarLabel: p?.label ?? "Sem pilar",
-        pillarColor: p?.color ?? "rgb(var(--fg-3))",
-        source: t.source,
-      });
-    }
-    out.overdue.sort((a, b) => a.date.localeCompare(b.date));
-    return out;
-  }, [tasks, today]);
 
   const now = new Date();
   const dateLabel = now.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" });
@@ -304,6 +266,18 @@ export default function DashboardPage() {
       {/* ── Atividades ── */}
       <div id="atividades" className="scroll-mt-20" />
       <SectionTitle title="Atividades" sub={act?.since ? `Histórico guardado desde ${shortDay(act.since)} · Todoist e TickTick` : "Todoist e TickTick"} />
+      {act && !act.since && (
+        <Card className="border-info/30 bg-info/[0.04] px-4 py-3 flex flex-wrap items-center gap-3">
+          <span className="w-2 h-2 rounded-full bg-info flex-none" />
+          <div className="flex-1 min-w-[240px]">
+            <div className="text-[13px] text-fg font-medium">O histórico de atividades ainda não foi importado</div>
+            <div className="text-[12px] text-fg-2 mt-0.5">O próximo sync traz as conclusões dos últimos 90 dias do Todoist e a rotina da última semana. Corre sozinho de hora a hora.</div>
+          </div>
+          <Button size="sm" variant="primary" onClick={sync} loading={syncing}>
+            Sincronizar agora
+          </Button>
+        </Card>
+      )}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card className="xl:col-span-2 p-5">
           <CardTitle
@@ -401,7 +375,13 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
         <div className="xl:col-span-2">
-          <TaskList tab={tab} onTab={setTab} lists={lists} onComplete={completeTask} />
+          <TaskBoard
+            tasks={tasks}
+            onCompleted={(id) => {
+              setTasks((prev) => prev?.filter((t) => t.id !== id) ?? prev);
+              load(range);
+            }}
+          />
         </div>
         <Card className="p-5">
           <CardTitle title="Tarefas abertas" sub="Estado de hoje e por pilar" />

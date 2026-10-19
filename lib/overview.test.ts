@@ -73,7 +73,10 @@ describe("buildOverview", () => {
     const o = buildOverview(
       {
         ...base,
-        openTasks: [{ id: "r1", content: "Bíblia", due: "2026-10-19", pillar: "deus", recurring: true, gtd_owner: null }],
+        openTasks: [
+          { id: "r1", content: "Bíblia", due: "2026-10-19", pillar: "deus", recurring: true, gtd_owner: null },
+          { id: "tt-r1", content: "bíblia", due: "2026-07-27", pillar: "deus", recurring: true, gtd_owner: null },
+        ],
         taskPillars: [{ id: "r1", pillar: "deus", source_project_id: "P" }, { id: "t2", pillar: "negocio", source_project_id: "N" }, { id: "t9", pillar: "negocio", source_project_id: "N" }],
         activity: [
           act("r1", "2026-10-19T06:10:00Z"), // 07:10 Lisboa
@@ -93,6 +96,7 @@ describe("buildOverview", () => {
     expect(a.streak).toBe(4);
     expect(a.byPillar.map((p) => [p.key, p.count])).toEqual([["deus", 3], ["negocio", 2]]);
     expect(a.byHour[7]).toBe(3);
+    expect(a.routine).toHaveLength(1); // Todoist + TickTick juntos
     expect(a.routine[0]).toMatchObject({ id: "r1", done: 3 });
     expect(a.routine[0].days.slice(-3)).toEqual([true, true, true]);
     expect(o.tasks.doneInRange).toBe(5);

@@ -5,6 +5,7 @@ import { localDateKey } from "@/lib/dates";
 import { plainTitle } from "@/lib/text";
 import { PILLARS, TaskCache } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import { TaskBoard, useCompleteTask } from "@/components/TaskBoard";
 import { Button, Card, ColorDot, EmptyState, Input, Label, Modal, Page, PageHeader, Select, Skeleton, useToast } from "@/components/ui";
 import { IconAgendar } from "@/components/icons";
 
@@ -17,6 +18,7 @@ interface CalEvent {
 
 interface Row {
   key: string;
+  id: string;
   time: string;
   label: string;
   color: string;
@@ -132,6 +134,10 @@ export default function AgendarPage() {
     }
   }
 
+  const removeTask = (id: string) => setTasks((prev) => prev?.filter((t) => t.id !== id) ?? prev);
+  const completeTask = useCompleteTask(removeTask);
+  const [completing, setCompleting] = useState<string | null>(null);
+
   const days = weekDays();
   const todayIso = localDateKey();
   const loading = tasks === null && events === null && !error;
@@ -141,7 +147,7 @@ export default function AgendarPage() {
       .filter((t) => t.due === iso)
       .map((t) => {
         const meta = pillarMeta(t.pillar);
-        return { key: "t-" + t.id, time: "", label: meta.label, color: meta.color, title: plainTitle(t.content), kind: "task" as const };
+        return { key: "t-" + t.id, id: t.id, time: "", label: meta.label, color: meta.color, title: plainTitle(t.content), kind: "task" as const };
       });
     const eventRows = (events || [])
       .filter((e) => localDateKey(new Date(e.start)) === iso)
@@ -151,6 +157,7 @@ export default function AgendarPage() {
         time: new Date(e.start).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }),
         label: "Evento",
         color: EVENT_COLOR,
+        id: e.id,
         title: e.summary,
         kind: "event" as const,
       }));
@@ -234,6 +241,28 @@ export default function AgendarPage() {
           <ul>
             {rows.map((r) => (
               <li key={r.key} className="flex items-center gap-3 px-5 h-12 border-b border-line/[0.05] last:border-b-0 hover:bg-line/[0.025]">
+                {r.kind === "task" ? (
+                  <button
+                    type="button"
+                    aria-label={`Concluir ${r.title}`}
+                    disabled={completing === r.id}
+                    onClick={async () => {
+                      setCompleting(r.id);
+                      await completeTask(r.id, r.title);
+                      setCompleting(null);
+                    }}
+                    className={cn(
+                      "w-[18px] h-[18px] rounded-md border flex-none flex items-center justify-center transition-colors",
+                      completing === r.id ? "bg-accent border-accent text-white" : "border-line/25 hover:border-accent text-transparent hover:text-accent/60"
+                    )}
+                  >
+                    <svg viewBox="0 0 24 24" className="w-3 h-3">
+                      <path d="M5 12.5 L10 17 L19 7" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span className="w-[18px] flex-none" />
+                )}
                 <span className="w-12 flex-none text-[12.5px] tabular font-medium text-fg-2">{r.time || "—"}</span>
                 <span className="flex-1 min-w-0 truncate text-[13.5px]">{r.title}</span>
                 <span className="inline-flex items-center gap-1.5 text-[12px] text-fg-3 flex-none">
@@ -245,6 +274,8 @@ export default function AgendarPage() {
           </ul>
         )}
       </Card>
+
+      <TaskBoard tasks={tasks} onCompleted={removeTask} />
 
       <Modal
         open={showForm}
