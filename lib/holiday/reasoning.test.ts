@@ -29,3 +29,30 @@ describe("tamanho do contexto", () => {
     expect(tokens).toBeLessThan(3500);
   });
 });
+
+import { parseReply } from "./reasoning";
+
+describe("parseReply", () => {
+  it("JSON puro", () => {
+    const r = parseReply('{"analysis":"a","reply":"Olá","actions":[{"type":"x","params":{}}]}');
+    expect(r?.reply).toBe("Olá");
+    expect(r?.actions).toHaveLength(1);
+  });
+  it("JSON dentro de bloco de codigo e com texto a volta", () => {
+    expect(parseReply('```json\n{"reply":"Hoje tens 4 tarefas"}\n```')?.reply).toBe("Hoje tens 4 tarefas");
+    expect(parseReply('Aqui vai:\n{"reply":"Feito","actions":[]}\nfim')?.reply).toBe("Feito");
+  });
+  it("texto livre vira resposta sem acoes", () => {
+    const r = parseReply("Hoje tens a rotina e o Jarvis.");
+    expect(r?.reply).toBe("Hoje tens a rotina e o Jarvis.");
+    expect(r?.actions).toEqual([]);
+  });
+  it("JSON cortado: recupera o reply", () => {
+    expect(parseReply('{"analysis":"x","reply":"Tens 4 tarefas para hoje.","actions":[{"type":"comp')?.reply).toBe(
+      "Tens 4 tarefas para hoje."
+    );
+  });
+  it("vazio devolve null", () => {
+    expect(parseReply("   ")).toBeNull();
+  });
+});

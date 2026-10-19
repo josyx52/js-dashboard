@@ -136,13 +136,50 @@ export function problemsText(problems: Problem[]): string {
     .join("\n");
 }
 
+// Le a resposta do modelo de forma tolerante: JSON puro, JSON dentro de
+// ```json``` ou rodeado de texto; se nao houver JSON valido, o texto e a
+// resposta (sem acoes) — melhor responder do que falhar.
+export function parseReply(raw: string): Reasoning | null {
+  const txt = raw.trim();
+  if (!txt) return null;
+  const candidates = [txt.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim()];
+  const first = txt.indexOf("{");
+  const last = txt.lastIndexOf("}");
+  if (first !== -1 && last > first) candidates.push(txt.slice(first, last + 1));
+  for (const c of candidates) {
+    try {
+      const p = JSON.parse(c);
+      if (p && typeof p.reply === "string" && p.reply.trim()) {
+        return {
+          analysis: String(p.analysis || ""),
+          reply: p.reply.trim(),
+          actions: Array.isArray(p.actions) ? p.actions.slice(0, 5) : [],
+        };
+      }
+    } catch {
+      // tenta o proximo candidato
+    }
+  }
+  // Texto livre (sem JSON): usa-o como resposta, se nao parecer JSON partido.
+  if (first === -1) return { analysis: "resposta em texto livre", reply: txt, actions: [] };
+  const m = /"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(txt);
+  if (m) {
+    try {
+      return { analysis: "json incompleto", reply: JSON.parse(`"${m[1]}"`), actions: [] };
+    } catch {}
+  }
+  return null;
+}
+
 // Resposta sem IA (circuit breaker aberto ou erro): so os problemas das regras.
 export function fallbackReply(problems: Problem[], why: string): Reasoning {
   const top = problems.slice(0, 3).map((p) => `• ${AREA_LABEL[p.area]}: ${p.signals[0].title}`);
   return {
     analysis: `fallback: ${why}`,
+    // O erro tecnico fica no "analysis" (log); ao utilizador vai uma frase simples.
     reply:
-      `Não consegui raciocinar agora (${why}). O que as regras detetam:\n` +
+      `${/limite/i.test(why) ? "Estou no limite de pedidos por minuto — tenta daqui a pouco." : "A IA falhou desta vez."} ` +
+      `Pelo que as regras veem agora:\n` +
       (top.length ? top.join("\n") : "• nada de relevante neste momento."),
     actions: [],
   };
@@ -225,8 +262,9 @@ export async function reason(input: {
         messages,
         temperature: 0.2,
         reasoning_effort: "low",
-        max_completion_tokens: 1200,
-        response_format: { type: "json_object" },
+        // Sem response_format: o modo JSON estrito da Groq rejeitava respostas
+        // (HTTP 400 "Failed to generate JSON"). O JSON e extraido em parseReply.
+        max_completion_tokens: 2000,
       }),
     });
 
@@ -242,23 +280,17 @@ export async function reason(input: {
     if (r.status === 429) throw new Error("limite de pedidos da Groq por minuto — tenta daqui a pouco");
     if (!r.ok) throw new Error(`Groq HTTP ${r.status}: ${String(j?.error?.message || "").slice(0, 160)}`.trim());
 
-    let txt: string = j.choices?.[0]?.message?.content?.trim() || "{}";
-    txt = txt.replace(/^```json/, "").replace(/^```/, "").replace(/```$/, "").trim();
-    const parsed = JSON.parse(txt);
-    if (typeof parsed.reply !== "string" || !parsed.reply.trim()) throw new Error("resposta sem 'reply'");
-
+    const parsed = parseReply(j.choices?.[0]?.message?.content || "");
+    if (!parsed) throw new Error("resposta vazia do modelo");
     failures = 0;
-    return {
-      analysis: String(parsed.analysis || ""),
-      reply: parsed.reply.trim(),
-      actions: Array.isArray(parsed.actions) ? parsed.actions.slice(0, 5) : [],
-    };
+    return parsed;
   } catch (e: any) {
     failures += 1;
     if (failures >= MAX_FAILURES) {
       disabledUntil = Date.now() + COOLDOWN_MS;
       failures = 0;
     }
+    console.error("holiday reasoning:", e?.message || e); // aparece nos logs do Worker
     return fallbackReply(input.problems, e?.message || String(e));
   }
 }
