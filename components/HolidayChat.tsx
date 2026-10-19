@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { compressImageToBase64 } from "@/lib/image";
 import { IconCamera, IconMic, IconPlay, IconSpeaker, IconStop } from "@/components/icons";
+import { Badge, Button, ColorDot, SectionLabel, StatusDot, useToast } from "@/components/ui";
 import { speak, stopSpeaking } from "@/lib/speech";
 import { Conversation, conversationSupported, type ConvState } from "@/lib/conversation";
 
@@ -57,23 +59,31 @@ const AREA: Record<string, { label: string; color: string }> = {
   estudo: { label: "Estudo", color: "#36CFC9" },
   negocio: { label: "Negócio", color: "#EF5DA8" },
   trabalho: { label: "Trabalho", color: "#4F8FF7" },
-  sistema: { label: "Sistema", color: "rgba(244,244,242,0.6)" },
+  sistema: { label: "Sistema", color: "rgb(var(--fg-3))" },
 };
-const SEV_COLOR: Record<Severity, string> = { alta: "#FF5F5F", media: "#E8B93F", baixa: "rgba(244,244,242,0.45)" };
-const KIND_LABEL: Record<MemoryItem["kind"], string> = { fato: "facto", preferencia: "preferência", objetivo: "objetivo", padrao: "padrão" };
+const SEV_TONE: Record<Severity, "danger" | "warning" | "neutral"> = { alta: "danger", media: "warning", baixa: "neutral" };
+const SEV_LABEL: Record<Severity, string> = { alta: "Alta", media: "Média", baixa: "Baixa" };
+const KIND_LABEL: Record<MemoryItem["kind"], string> = { fato: "Facto", preferencia: "Preferência", objetivo: "Objetivo", padrao: "Padrão" };
 
-const mono = (w: number, size: number) => `${w} ${size}px 'JetBrains Mono',monospace`;
-const chip = (color: string, active = false): React.CSSProperties => ({
-  display: "flex", alignItems: "center", gap: 6, font: mono(600, 10.5), color,
-  background: active ? `${color}22` : "transparent", border: `1px solid ${color}55`,
-  borderRadius: 3, padding: "3px 8px", cursor: "pointer", whiteSpace: "nowrap",
-});
+// Marca do Holiday: um quadrado com gradiente da marca e a inicial.
+function Avatar({ size = 28 }: { size?: number }) {
+  return (
+    <div
+      className="flex-none rounded-lg flex items-center justify-center font-semibold text-white bg-gradient-to-br from-accent to-violet"
+      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      aria-hidden
+    >
+      H
+    </div>
+  );
+}
 
 function time(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function HolidayChat() {
+  const toast = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [actions, setActions] = useState<Action[]>([]);
   const [problems, setProblems] = useState<Problem[]>([]);
@@ -91,6 +101,7 @@ export default function HolidayChat() {
   const [muted, setMuted] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const convRef = useRef<Conversation | null>(null);
   const sendRef = useRef<(o: { text?: string; voice?: boolean }) => Promise<string | null>>(async () => null);
 
@@ -181,7 +192,7 @@ export default function HolidayChat() {
           ? "Dá-me só uns segundos, estou com muitos pedidos. Repete daqui a pouco?"
           : "Desculpa, a ligação falhou. Podes repetir?";
       }
-      setError(e.message);
+      toast.error("O Holiday não respondeu", e.message);
       return null;
     } finally {
       setThinking(null);
@@ -209,7 +220,7 @@ export default function HolidayChat() {
         if (st === "off") convRef.current = null;
       },
       onUtterance: (text) => sendRef.current({ text, voice: true }),
-      onError: (msg) => setError(msg),
+      onError: (msg) => toast.error("Conversa por voz", msg),
     });
     convRef.current = c;
     c.start();
@@ -225,7 +236,7 @@ export default function HolidayChat() {
       setDraft("");
       await send({ text, imageBase64: base64 });
     } catch (err: any) {
-      setError("Foto: " + (err?.message || err));
+      toast.error("Não consegui ler a foto", String(err?.message || err));
     }
   }
 
@@ -234,11 +245,11 @@ export default function HolidayChat() {
     setError(null);
     try {
       const d = await api<{ skipped?: string; message?: Message }>("/api/holiday/briefing?force=1", { method: "POST" });
-      if (d.skipped) setError("Briefing: " + d.skipped);
+      if (d.skipped) toast.info("Briefing", d.skipped);
       await load();
       if (voiceOn && d.message) speak(d.message.content);
     } catch (e: any) {
-      setError(e.message);
+      toast.error("Falhou o briefing", e.message);
     } finally {
       setThinking(null);
     }
@@ -250,7 +261,7 @@ export default function HolidayChat() {
       const d = await api<{ action: Action }>(`/api/holiday/actions/${a.id}`, { body: { decision } });
       setActions((p) => p.map((x) => (x.id === a.id ? d.action : x)));
     } catch (e: any) {
-      setError(e.message);
+      toast.error("Não foi possível decidir", e.message);
       await load();
     } finally {
       setDeciding(null);
@@ -262,10 +273,9 @@ export default function HolidayChat() {
       await api(`/api/holiday/memories/${m.id}`, { method: "DELETE" });
       setMemories((p) => p.filter((x) => x.id !== m.id));
     } catch (e: any) {
-      setError(e.message);
+      toast.error("Não foi possível esquecer", e.message);
     }
   }
-
   const todayKey = new Date().toLocaleDateString("en-CA");
   const hasBriefingToday = messages.some(
     (m) => m.role === "briefing" && new Date(m.created_at).toLocaleDateString("en-CA") === todayKey
@@ -274,11 +284,11 @@ export default function HolidayChat() {
   const busy = !!thinking && !talking;
   const CONV_LABEL: Record<ConvState, string> = {
     off: "",
-    starting: "a ligar o microfone…",
-    listening: "a ouvir — fala quando quiseres",
-    hearing: "estou a ouvir-te…",
-    thinking: "a pensar…",
-    speaking: "a falar — podes interromper",
+    starting: "A ligar o microfone…",
+    listening: "A ouvir — fala quando quiseres",
+    hearing: "Estou a ouvir-te…",
+    thinking: "A pensar…",
+    speaking: "A falar — podes interromper",
   };
 
   // Agrupa mensagens por dia para os separadores.
@@ -289,14 +299,10 @@ export default function HolidayChat() {
     if (d === y) return "Ontem";
     return new Date(iso).toLocaleDateString("pt-PT", { weekday: "long", day: "2-digit", month: "long" });
   };
-  const status = talking
-    ? muted && conv !== "speaking" && conv !== "thinking"
-      ? "microfone silenciado"
-      : CONV_LABEL[conv]
-    : thinking
-    ? "a pensar…"
-    : "online · pensa como o Jarvis";
-  const statusColor = talking ? (conv === "hearing" ? "#F54E00" : conv === "speaking" ? "#8B7CF6" : "#3DDC84") : thinking ? "#E8B93F" : "#3DDC84";
+  const micMuted = talking && muted && conv !== "speaking" && conv !== "thinking";
+  const status = talking ? (micMuted ? "Microfone silenciado" : CONV_LABEL[conv]) : thinking ? "A pensar…" : "Online";
+  const statusTone: "success" | "warning" | "danger" = micMuted ? "danger" : thinking || conv === "thinking" ? "warning" : "success";
+  const statusPulse = !micMuted && (conv === "hearing" || conv === "speaking" || conv === "thinking" || (!!thinking && !talking));
   const SUGGESTIONS = [
     "O que tenho para hoje?",
     "Analisa a minha semana e diz-me o que está a falhar",
@@ -305,39 +311,47 @@ export default function HolidayChat() {
   ];
   const totalSignals = problems.reduce((a, p) => a + p.signals.length, 0);
 
+  function autoGrow(el: HTMLTextAreaElement | null) {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }
+  useEffect(() => autoGrow(taRef.current), [draft]);
+
   const contextPanel = (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <section>
-        <div className="flex items-center justify-between mb-2.5">
-          <span style={{ font: mono(700, 10), letterSpacing: "0.08em", color: "rgba(244,244,242,0.45)" }}>AGORA</span>
-          <span style={{ font: mono(600, 10), color: "rgba(244,244,242,0.35)" }}>{totalSignals} sinais</span>
-        </div>
-        {loaded && problems.length === 0 && <div style={{ font: "500 12px Inter,sans-serif", color: "#3DDC84" }}>Tudo em ordem.</div>}
-        <div className="flex flex-col gap-2">
+        <SectionLabel right={<span className="tabular">{totalSignals} sinais</span>}>Agora</SectionLabel>
+        {loaded && problems.length === 0 && (
+          <div className="flex items-center gap-2 text-[12.5px] text-success">
+            <StatusDot tone="success" /> Tudo em ordem.
+          </div>
+        )}
+        <div className="flex flex-col gap-0.5">
           {problems.map((p) => {
             const a = AREA[p.area] || AREA.sistema;
             const open = panel === p.area;
             return (
-              <div key={p.area} style={{ borderRadius: 6, background: open ? "rgba(255,255,255,0.035)" : "transparent" }}>
+              <div key={p.area} className={cn("rounded-lg transition-colors", open && "bg-line/[0.04]")}>
                 <button
                   onClick={() => setPanel(open ? null : p.area)}
-                  className="w-full flex items-center gap-2 hover:bg-white/[0.03] transition-colors"
-                  style={{ padding: "7px 8px", borderRadius: 6, background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}
+                  aria-expanded={open}
+                  className="w-full flex items-center gap-2.5 px-2 h-9 rounded-lg hover:bg-line/[0.04] text-left transition-colors"
                 >
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: a.color, flexShrink: 0 }} />
-                  <span style={{ flex: 1, font: "600 12.5px Inter,sans-serif", color: "#F4F4F2" }}>{a.label}</span>
-                  <span style={{ font: mono(700, 9.5), color: SEV_COLOR[p.severity] }}>{p.severity.toUpperCase()}</span>
-                  <span style={{ font: mono(600, 10.5), color: "rgba(244,244,242,0.4)", width: 14, textAlign: "right" }}>{p.signals.length}</span>
+                  <ColorDot color={a.color} />
+                  <span className="flex-1 text-[13px] font-medium text-fg">{a.label}</span>
+                  <Badge tone={SEV_TONE[p.severity]}>{SEV_LABEL[p.severity]}</Badge>
+                  <span className="text-[12px] text-fg-3 tabular w-4 text-right">{p.signals.length}</span>
                 </button>
                 {open && (
-                  <div className="flex flex-col gap-1.5" style={{ padding: "2px 10px 10px 24px" }}>
+                  <ul className="flex flex-col gap-2 pl-[30px] pr-3 pb-3 pt-1">
                     {p.signals.map((sg) => (
-                      <div key={sg.id} style={{ font: "500 11.5px Inter,sans-serif", color: "rgba(244,244,242,0.72)", lineHeight: 1.45 }}>
+                      <li key={sg.id} className="text-[12.5px] text-fg-2 leading-snug">
                         {sg.title}
-                        {sg.detail && <div style={{ color: "rgba(244,244,242,0.38)" }}>{sg.detail}</div>}
-                      </div>
+                        {sg.detail && <div className="text-fg-3 mt-0.5">{sg.detail}</div>}
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 )}
               </div>
             );
@@ -346,56 +360,48 @@ export default function HolidayChat() {
       </section>
 
       <section>
-        <div className="flex items-center justify-between mb-2.5">
-          <span style={{ font: mono(700, 10), letterSpacing: "0.08em", color: "rgba(244,244,242,0.45)" }}>DELEGADAS AO HOLIDAY</span>
-          <span style={{ font: mono(600, 10), color: "rgba(244,244,242,0.35)" }}>{delegated.length}</span>
-        </div>
+        <SectionLabel right={<span className="tabular">{delegated.length}</span>}>Delegadas ao Holiday</SectionLabel>
         {delegated.length === 0 && (
-          <div style={{ font: "500 12px Inter,sans-serif", color: "rgba(244,244,242,0.4)", lineHeight: 1.5 }}>
-            Nada delegado. Diz “fica tu com a tabela de preços”.
-          </div>
+          <p className="text-[12.5px] text-fg-3 leading-relaxed">Nada delegado. Experimenta “fica tu com a tabela de preços”.</p>
         )}
         <div className="flex flex-col gap-2">
           {delegated.map((t) => (
-            <div key={t.id} style={{ padding: "8px 10px", borderRadius: 6, background: "rgba(255,255,255,0.03)", boxShadow: `inset 2px 0 0 ${t.note ? "#3DDC84" : "#E8B93F"}` }}>
-              <div style={{ font: "600 12px Inter,sans-serif", color: "#F4F4F2" }}>{t.title}</div>
-              <div style={{ font: mono(600, 9.5), color: t.note ? "#3DDC84" : "#E8B93F", marginTop: 3 }}>{t.note ? "EM CURSO" : "POR COMEÇAR"}</div>
-              {t.note && (
-                <div style={{ font: "500 11px Inter,sans-serif", color: "rgba(244,244,242,0.45)", whiteSpace: "pre-wrap", marginTop: 3 }}>
-                  {t.note.split("\n").slice(-1)[0]}
-                </div>
-              )}
+            <div key={t.id} className="rounded-lg border border-line/[0.07] bg-surface-2 px-3 py-2.5">
+              <div className="flex items-start gap-2">
+                <span className="flex-1 text-[12.5px] font-medium text-fg leading-snug">{t.title}</span>
+                <Badge tone={t.note ? "success" : "warning"}>{t.note ? "Em curso" : "Por começar"}</Badge>
+              </div>
+              {t.note && <p className="text-[12px] text-fg-3 mt-1.5 whitespace-pre-wrap line-clamp-2">{t.note.split("\n").slice(-1)[0]}</p>}
             </div>
           ))}
         </div>
       </section>
 
       <section>
-        <div className="flex items-center justify-between mb-2.5">
-          <span style={{ font: mono(700, 10), letterSpacing: "0.08em", color: "rgba(244,244,242,0.45)" }}>MEMÓRIA</span>
-          <span style={{ font: mono(600, 10), color: "rgba(244,244,242,0.35)" }}>{memories.length}</span>
-        </div>
+        <SectionLabel right={<span className="tabular">{memories.length}</span>}>Memória</SectionLabel>
         {memories.length === 0 && (
-          <div style={{ font: "500 12px Inter,sans-serif", color: "rgba(244,244,242,0.4)", lineHeight: 1.5 }}>
-            Ainda vazia. O Holiday aprende com as conversas e com os padrões do teu histórico.
-          </div>
+          <p className="text-[12.5px] text-fg-3 leading-relaxed">Ainda vazia. O Holiday aprende com as conversas e com os padrões do teu histórico.</p>
         )}
-        <div className="flex flex-col gap-1">
+        <ul className="flex flex-col">
           {memories.map((m) => (
-            <div key={m.id} className="group flex items-start gap-2" style={{ padding: "6px 4px" }}>
-              <span style={{ font: mono(700, 9), color: "#36CFC9", flexShrink: 0, paddingTop: 2, width: 64 }}>{KIND_LABEL[m.kind].toUpperCase()}</span>
-              <span style={{ flex: 1, font: "500 12px Inter,sans-serif", color: "rgba(244,244,242,0.8)", lineHeight: 1.4 }}>{m.content}</span>
+            <li key={m.id} className="group flex items-start gap-2 py-2 border-b border-line/[0.05] last:border-b-0">
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-medium text-info">{KIND_LABEL[m.kind]}</div>
+                <div className="text-[12.5px] text-fg-2 leading-snug mt-0.5">{m.content}</div>
+              </div>
               <button
                 onClick={() => forget(m)}
                 title="Esquecer"
-                className="opacity-40 group-hover:opacity-100 transition-opacity"
-                style={{ background: "transparent", border: "none", color: "rgba(244,244,242,0.6)", cursor: "pointer", font: mono(700, 11) }}
+                aria-label={`Esquecer: ${m.content}`}
+                className="w-6 h-6 flex-none rounded-md flex items-center justify-center text-fg-3 hover:text-danger hover:bg-danger/10 md:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition"
               >
-                ✕
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5">
+                  <path d="M6 6 L18 18 M18 6 L6 18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+                </svg>
               </button>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
     </div>
   );
@@ -403,58 +409,67 @@ export default function HolidayChat() {
   let lastDay = "";
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 14 }}>
+    <div className="flex-1 min-h-0 flex gap-4">
       {/* Coluna do chat */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 10, overflow: "hidden" }}>
+      <div className="flex-1 min-w-0 flex flex-col md:border md:border-line/[0.07] md:bg-surface md:rounded-card overflow-hidden">
         {/* Cabecalho */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-          <div style={{ position: "relative", width: 38, height: 38, flexShrink: 0 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 10, background: "linear-gradient(135deg,#F54E00 0%,#8B7CF6 100%)", display: "flex", alignItems: "center", justifyContent: "center", font: mono(800, 15), color: "#0B0C10" }}>H</div>
-            <span
-              className={talking || thinking ? "animate-pulse" : ""}
-              style={{ position: "absolute", right: -2, bottom: -2, width: 11, height: 11, borderRadius: "50%", background: statusColor, boxShadow: "0 0 0 2px #14161B" }}
-            />
+        <div className="flex items-center gap-3 px-4 sm:px-5 h-[60px] border-b border-line/[0.07] flex-none">
+          <Avatar size={32} />
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] font-semibold text-fg leading-tight">Holiday</div>
+            <div className="flex items-center gap-1.5 text-[12px] text-fg-3 mt-0.5 min-w-0">
+              <StatusDot tone={statusTone} pulse={statusPulse} />
+              <span className="truncate">{status}</span>
+            </div>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ font: "700 15px Inter,sans-serif", color: "#F4F4F2" }}>Holiday</div>
-            <div style={{ font: mono(500, 11), color: "rgba(244,244,242,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{status}</div>
-          </div>
-          <button onClick={toggleVoice} title="Ler as respostas em voz alta" style={chip(voiceOn ? "#3DDC84" : "rgba(244,244,242,0.55)", voiceOn)}>
-            <IconSpeaker className="w-3.5 h-3.5" muted={!voiceOn} />
-            <span className="hidden sm:inline">VOZ</span>
-          </button>
           {!hasBriefingToday && loaded && (
-            <button onClick={briefing} disabled={busy} style={{ ...chip("#E8B93F"), opacity: busy ? 0.5 : 1 }}>
-              BRIEFING
-            </button>
+            <Button size="sm" variant="ghost" onClick={briefing} disabled={busy}>
+              Briefing
+            </Button>
           )}
+          <Button
+            size="sm"
+            variant={voiceOn ? "secondary" : "ghost"}
+            onClick={toggleVoice}
+            title="Ler as respostas em voz alta"
+            aria-pressed={voiceOn}
+            icon={<IconSpeaker className="w-4 h-4" muted={!voiceOn} />}
+          >
+            <span className="hidden sm:inline">{voiceOn ? "Voz ligada" : "Voz"}</span>
+          </Button>
           <span className="lg:hidden">
-            <button onClick={() => setPanel(panel === "mobile" ? null : "mobile")} style={chip("rgba(244,244,242,0.7)", panel === "mobile")}>
-              CONTEXTO{totalSignals ? ` · ${totalSignals}` : ""}
-            </button>
+            <Button size="sm" variant={panel === "mobile" ? "secondary" : "ghost"} onClick={() => setPanel(panel === "mobile" ? null : "mobile")} aria-expanded={panel === "mobile"}>
+              Contexto
+              {totalSignals > 0 && <span className="tabular text-fg-3">{totalSignals}</span>}
+            </Button>
           </span>
         </div>
 
         {/* Contexto no telemovel */}
         {panel === "mobile" && (
-          <div className="lg:hidden" style={{ maxHeight: "45vh", overflowY: "auto", padding: 16, borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#121419" }}>
-            {contextPanel}
-          </div>
+          <div className="lg:hidden max-h-[45vh] overflow-y-auto p-4 border-b border-line/[0.07] bg-surface-2/50 animate-fade-up">{contextPanel}</div>
         )}
 
         {/* Mensagens */}
-        <div ref={boxRef} style={{ flex: 1, overflowY: "auto", padding: "18px 18px 8px" }}>
-          <div style={{ maxWidth: 780, margin: "0 auto", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div ref={boxRef} className="flex-1 overflow-y-auto px-4 sm:px-6 pt-6 pb-2">
+          <div className="max-w-[760px] mx-auto flex flex-col gap-5">
             {loaded && messages.length === 0 && (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "40px 10px", gap: 14 }}>
-                <div style={{ width: 54, height: 54, borderRadius: 14, background: "linear-gradient(135deg,#F54E00 0%,#8B7CF6 100%)", display: "flex", alignItems: "center", justifyContent: "center", font: mono(800, 22), color: "#0B0C10" }}>H</div>
-                <div style={{ font: "700 18px Inter,sans-serif" }}>Olá, sou o Holiday.</div>
-                <div style={{ font: "500 13px Inter,sans-serif", color: "rgba(244,244,242,0.5)", maxWidth: 460, lineHeight: 1.55 }}>
-                  Vejo as tuas tarefas, rotina, refeições e peso, comparo com o teu histórico e procuro a causa do que está a falhar.
-                  Fala comigo por texto, voz ou com a foto de um prato.
-                </div>
+              <div className="flex flex-col items-center text-center py-12 px-3 gap-3">
+                <Avatar size={48} />
+                <h2 className="text-[18px] font-semibold text-fg mt-1">Olá, sou o Holiday.</h2>
+                <p className="text-[13.5px] text-fg-2 max-w-[460px] leading-relaxed">
+                  Vejo as tuas tarefas, rotina, refeições e peso, comparo com o teu histórico e procuro a causa do que está a falhar. Fala
+                  comigo por texto, voz ou com a foto de um prato.
+                </p>
               </div>
             )}
+            {!loaded &&
+              [0, 1, 2].map((i) => (
+                <div key={i} className={cn("flex gap-3", i % 2 === 1 && "justify-end")}>
+                  {!(i % 2) && <div className="w-7 h-7 rounded-lg bg-line/[0.05] animate-pulse" />}
+                  <div className={cn("h-14 rounded-2xl bg-line/[0.05] animate-pulse", i % 2 ? "w-1/3" : "w-2/3")} />
+                </div>
+              ))}
 
             {messages.map((m) => {
               const mine = m.role === "user";
@@ -462,92 +477,99 @@ export default function HolidayChat() {
               const day = dayLabel(m.created_at);
               const sep = day !== lastDay;
               lastDay = day;
-              const tag = m.role === "briefing" ? ((m as any).automation_name ? `AUTOMAÇÃO · ${(m as any).automation_name}` : "BRIEFING") : null;
+              const tag = m.role === "briefing" ? ((m as any).automation_name ? `Automação · ${(m as any).automation_name}` : "Briefing") : null;
               return (
-                <div key={m.id} style={{ display: "contents" }}>
+                <div key={m.id} className="contents">
                   {sep && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0" }}>
-                      <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
-                      <span style={{ font: mono(600, 10), color: "rgba(244,244,242,0.35)", textTransform: "uppercase" }}>{day}</span>
-                      <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+                    <div className="flex items-center gap-3 my-1" role="separator">
+                      <span className="flex-1 h-px bg-line/[0.06]" />
+                      <span className="text-[11.5px] font-medium text-fg-3 first-letter:uppercase">{day}</span>
+                      <span className="flex-1 h-px bg-line/[0.06]" />
                     </div>
                   )}
-                  <div style={{ display: "flex", gap: 10, justifyContent: mine ? "flex-end" : "flex-start" }}>
+                  <div className={cn("group flex gap-3 animate-fade-up", mine ? "justify-end" : "justify-start")}>
                     {!mine && (
-                      <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "linear-gradient(135deg,#F54E00 0%,#8B7CF6 100%)", display: "flex", alignItems: "center", justifyContent: "center", font: mono(800, 11), color: "#0B0C10", marginTop: 2 }}>H</div>
+                      <div className="mt-0.5">
+                        <Avatar />
+                      </div>
                     )}
-                    <div style={{ maxWidth: mine ? "78%" : "calc(100% - 38px)", display: "flex", flexDirection: "column", gap: 6, alignItems: mine ? "flex-end" : "flex-start" }}>
-                      {tag && <span style={{ font: mono(700, 9.5), letterSpacing: "0.06em", color: "#E8B93F" }}>{tag}</span>}
+                    <div className={cn("flex flex-col gap-2 min-w-0", mine ? "items-end max-w-[82%] sm:max-w-[75%]" : "items-start flex-1")}>
+                      {tag && <Badge tone="warning">{tag}</Badge>}
                       <div
-                        style={{
-                          padding: mine ? "10px 14px" : "11px 15px",
-                          borderRadius: mine ? "14px 14px 4px 14px" : "4px 14px 14px 14px",
-                          font: "500 13.5px Inter,sans-serif",
-                          lineHeight: 1.55,
-                          background: mine ? "#F54E00" : tag ? "rgba(232,185,63,0.06)" : "#1B1D23",
-                          color: mine ? "#0B0C10" : "#ECECEA",
-                          border: mine ? "none" : tag ? "1px solid rgba(232,185,63,0.25)" : "1px solid rgba(255,255,255,0.06)",
-                        }}
+                        className={cn(
+                          "text-[14px] leading-[1.6] break-words",
+                          mine
+                            ? "bg-surface-3 text-fg px-3.5 py-2.5 rounded-2xl rounded-br-md"
+                            : tag
+                            ? "text-fg border border-warning/20 bg-warning/[0.04] rounded-xl px-3.5 py-2.5"
+                            : "text-fg pt-1"
+                        )}
                       >
                         {m.content.startsWith("📷") ? (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                            <IconCamera className="w-4 h-4 flex-none" />
-                            {m.content.slice(2).trim() || "foto"}
+                          <span className="inline-flex items-center gap-1.5">
+                            <IconCamera className="w-4 h-4 flex-none text-fg-2" />
+                            {m.content.slice(2).trim() || "Foto"}
                           </span>
                         ) : (
                           renderText(m.content)
                         )}
                       </div>
 
-                      {msgActions.map((a) => (
-                        <div key={a.id} style={{ width: "100%", maxWidth: 520, border: `1px solid ${a.status === "proposed" ? "rgba(139,124,246,0.45)" : "rgba(255,255,255,0.07)"}`, background: a.status === "proposed" ? "rgba(139,124,246,0.07)" : "rgba(255,255,255,0.02)", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", font: mono(800, 10), color: "#0B0C10", background: a.status === "executed" ? "#3DDC84" : a.status === "failed" ? "#FF5F5F" : a.status === "rejected" ? "rgba(244,244,242,0.3)" : "#8B7CF6" }}>
-                              {a.status === "executed" ? "✓" : a.status === "failed" ? "!" : a.status === "rejected" ? "–" : "?"}
-                            </span>
-                            <span style={{ flex: 1, font: "600 12.5px Inter,sans-serif", textDecoration: a.status === "rejected" ? "line-through" : undefined, color: a.status === "rejected" ? "rgba(244,244,242,0.4)" : "#F4F4F2" }}>
-                              {a.summary || a.type}
-                            </span>
-                            <span style={{ font: mono(700, 9), color: "rgba(244,244,242,0.4)" }}>
-                              {a.status === "executed" ? "FEITO" : a.status === "failed" ? "FALHOU" : a.status === "rejected" ? "REJEITADA" : "PRECISA DE TI"}
-                            </span>
-                          </div>
-                          {a.status === "proposed" && a.reason && <span style={{ font: "500 11.5px Inter,sans-serif", color: "rgba(244,244,242,0.55)", paddingLeft: 26 }}>{a.reason}</span>}
-                          {a.result && a.status !== "proposed" && (
-                            <span style={{ font: mono(500, 10.5), color: "rgba(244,244,242,0.45)", paddingLeft: 26, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{a.result}</span>
-                          )}
-                          {a.status === "proposed" && (
-                            <div style={{ display: "flex", gap: 8, paddingLeft: 26 }}>
-                              <button
-                                onClick={() => decide(a, "approve")}
-                                disabled={deciding === a.id}
-                                style={{ padding: "6px 14px", background: "#8B7CF6", border: "none", borderRadius: 6, color: "#0B0C10", font: mono(700, 10.5), cursor: "pointer", opacity: deciding === a.id ? 0.5 : 1 }}
+                      {msgActions.map((a) => {
+                        const proposed = a.status === "proposed";
+                        const meta = {
+                          executed: { tone: "success" as const, label: "Feito" },
+                          failed: { tone: "danger" as const, label: "Falhou" },
+                          rejected: { tone: "neutral" as const, label: "Rejeitada" },
+                          proposed: { tone: "violet" as const, label: "Precisa de ti" },
+                        }[a.status];
+                        return (
+                          <div
+                            key={a.id}
+                            className={cn(
+                              "w-full max-w-[540px] rounded-xl border px-3.5 py-3 flex flex-col gap-2",
+                              proposed ? "border-violet/30 bg-violet/[0.06]" : "border-line/[0.07] bg-surface-2/60"
+                            )}
+                          >
+                            <div className="flex items-start gap-2.5">
+                              <span
+                                className={cn(
+                                  "text-[13px] font-medium flex-1 leading-snug",
+                                  a.status === "rejected" ? "line-through text-fg-3" : "text-fg"
+                                )}
                               >
-                                {deciding === a.id ? "…" : "APROVAR"}
-                              </button>
-                              <button
-                                onClick={() => decide(a, "reject")}
-                                disabled={deciding === a.id}
-                                style={{ padding: "6px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 6, color: "rgba(244,244,242,0.7)", font: mono(700, 10.5), cursor: "pointer" }}
-                              >
-                                REJEITAR
-                              </button>
+                                {a.summary || a.type}
+                              </span>
+                              <Badge tone={meta.tone} dot>
+                                {meta.label}
+                              </Badge>
                             </div>
-                          )}
-                        </div>
-                      ))}
+                            {proposed && a.reason && <p className="text-[12.5px] text-fg-2 leading-snug">{a.reason}</p>}
+                            {a.result && !proposed && <p className="text-[12px] text-fg-3 whitespace-pre-wrap break-words leading-snug">{a.result}</p>}
+                            {proposed && (
+                              <div className="flex gap-2 pt-0.5">
+                                <Button size="sm" variant="success" onClick={() => decide(a, "approve")} loading={deciding === a.id}>
+                                  Aprovar
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => decide(a, "reject")} disabled={deciding === a.id}>
+                                  Rejeitar
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ font: mono(500, 10), color: "rgba(244,244,242,0.28)" }}>{time(m.created_at)}</span>
+                      <div className="flex items-center gap-3 text-[11.5px] text-fg-3 h-5">
+                        <span className="tabular">{time(m.created_at)}</span>
                         {!mine && (
                           <button
                             onClick={() => speak(m.content)}
                             title="Ouvir"
-                            className="hover:text-white/70 transition-colors"
-                            style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "none", padding: 0, cursor: "pointer", font: mono(600, 10), color: "rgba(244,244,242,0.3)" }}
+                            className="inline-flex items-center gap-1 hover:text-fg-2 md:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition"
                           >
                             <IconPlay className="w-2.5 h-2.5" />
-                            ouvir
+                            Ouvir
                           </button>
                         )}
                       </div>
@@ -558,26 +580,34 @@ export default function HolidayChat() {
             })}
 
             {thinking && !talking && (
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg,#F54E00 0%,#8B7CF6 100%)", display: "flex", alignItems: "center", justifyContent: "center", font: mono(800, 11), color: "#0B0C10" }}>H</div>
-                <div className="flex gap-1 items-center" style={{ padding: "10px 14px", borderRadius: "4px 14px 14px 14px", background: "#1B1D23", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  {[0, 1, 2].map((i) => (
-                    <span key={i} className="animate-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "rgba(244,244,242,0.5)", animationDelay: `${i * 0.2}s` }} />
-                  ))}
-                  <span style={{ font: mono(500, 11), color: "rgba(244,244,242,0.45)", marginLeft: 8 }}>{thinking}</span>
+              <div className="flex gap-3 items-start animate-fade-up">
+                <Avatar />
+                <div className="flex items-center gap-2 pt-1.5">
+                  <span className="flex gap-1">
+                    {[0, 1, 2].map((i) => (
+                      <span key={i} className="w-1.5 h-1.5 rounded-full bg-fg-3 animate-pulse" style={{ animationDelay: `${i * 0.2}s` }} />
+                    ))}
+                  </span>
+                  <span className="text-[12.5px] text-fg-3">{thinking}</span>
                 </div>
               </div>
             )}
-            {error && <div style={{ font: mono(500, 11.5), color: "#FF5F5F", textAlign: "center" }}>{error}</div>}
+            {error && (
+              <div className="flex items-center justify-center gap-3 text-[12.5px] text-danger">
+                Não foi possível carregar a conversa: {error}
+                <Button size="sm" variant="ghost" onClick={load}>
+                  Tentar de novo
+                </Button>
+              </div>
+            )}
 
             {loaded && !thinking && messages.length < 4 && (
-              <div className="flex flex-wrap gap-2 justify-center" style={{ marginTop: 4 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
                 {SUGGESTIONS.map((q) => (
                   <button
                     key={q}
                     onClick={() => send({ text: q })}
-                    className="hover:border-accent hover:text-white transition-colors"
-                    style={{ font: "500 12px Inter,sans-serif", color: "rgba(244,244,242,0.7)", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 999, padding: "7px 13px", cursor: "pointer" }}
+                    className="text-left text-[13px] text-fg-2 rounded-xl border border-line/[0.08] bg-surface-2/60 px-3.5 py-2.5 hover:border-line/20 hover:text-fg hover:bg-surface-2 transition-colors"
                   >
                     {q}
                   </button>
@@ -587,76 +617,95 @@ export default function HolidayChat() {
           </div>
         </div>
 
-        {/* Barra da conversa por voz */}
-        {talking && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 18px", borderTop: "1px solid rgba(255,255,255,0.07)", background: "rgba(61,220,132,0.04)" }}>
-            <span className={conv === "hearing" || conv === "speaking" ? "animate-pulse" : ""} style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: muted ? "#FF5F5F" : statusColor }} />
-            <span style={{ flex: 1, font: mono(600, 11), color: "rgba(244,244,242,0.7)" }}>{status}</span>
-            <button
-              onClick={toggleMute}
-              title={muted ? "Ligar o microfone" : "Silenciar o microfone"}
-              style={{ display: "flex", alignItems: "center", gap: 6, font: mono(700, 10), color: muted ? "#FF5F5F" : "rgba(244,244,242,0.6)", background: muted ? "rgba(255,95,95,0.1)" : "transparent", border: `1px solid ${muted ? "rgba(255,95,95,0.5)" : "rgba(255,255,255,0.14)"}`, borderRadius: 6, padding: "4px 9px", cursor: "pointer" }}
-            >
-              <IconMic className="w-3.5 h-3.5" muted={muted} />
-              {muted ? "LIGAR MIC" : "SILENCIAR"}
-            </button>
-            <button onClick={toggleConversation} style={{ font: mono(700, 10), color: "rgba(244,244,242,0.6)", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 6, padding: "4px 9px", cursor: "pointer" }}>
-              TERMINAR
-            </button>
-          </div>
-        )}
-
-        {/* Compositor */}
-        <div style={{ padding: "10px 14px 14px" }}>
-          <div
-            className="focus-within:border-accent/60 transition-colors"
-            style={{ maxWidth: 780, margin: "0 auto", display: "flex", alignItems: "center", gap: 6, padding: 6, background: "#0E1014", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12 }}
-          >
-            <label
-              title="Foto de uma refeição"
-              className="text-white/55 hover:text-accent transition-colors"
-              style={{ width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}
-            >
-              <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} disabled={busy} style={{ display: "none" }} />
-              <IconCamera className="w-[18px] h-[18px]" />
-            </label>
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") send();
-              }}
-              placeholder={talking ? "em conversa por voz — também podes escrever" : "Escreve ao Holiday…"}
-              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", padding: "8px 4px", color: "#F4F4F2", font: "500 13.5px Inter,sans-serif", outline: "none" }}
-            />
-            {canTalk && (
-              <button
-                onClick={toggleConversation}
-                title={talking ? "Terminar conversa" : "Conversar por voz"}
-                className={talking ? "text-[#FF5F5F]" : "text-white/55 hover:text-accent transition-colors"}
-                style={{ width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: talking ? "rgba(255,95,95,0.12)" : "transparent", borderRadius: 8, cursor: "pointer" }}
+        {/* Compositor (com a barra da conversa por voz por cima) */}
+        <div className="flex-none px-3 sm:px-5 pt-2 pb-3 sm:pb-4">
+          <div className="max-w-[760px] mx-auto flex flex-col gap-2">
+            {talking && (
+              <div
+                className={cn(
+                  "flex items-center gap-2.5 rounded-xl border px-3 h-11 animate-fade-up",
+                  micMuted ? "border-danger/25 bg-danger/[0.06]" : "border-line/[0.08] bg-surface-2"
+                )}
+                aria-live="polite"
               >
-                {talking ? <IconStop className="w-4 h-4" /> : <IconMic className="w-[18px] h-[18px]" />}
-              </button>
+                <StatusDot tone={statusTone} pulse={statusPulse} />
+                <span className="flex-1 min-w-0 truncate text-[13px] text-fg-2">{status}</span>
+                <Button
+                  size="sm"
+                  variant={muted ? "danger" : "ghost"}
+                  onClick={toggleMute}
+                  aria-pressed={muted}
+                  title={muted ? "Ligar o microfone" : "Silenciar o microfone"}
+                  icon={<IconMic className="w-4 h-4" muted={muted} />}
+                >
+                  <span className="hidden sm:inline">{muted ? "Ligar mic" : "Silenciar"}</span>
+                </Button>
+                <Button size="sm" variant="secondary" onClick={toggleConversation}>
+                  Terminar
+                </Button>
+              </div>
             )}
-            <button
-              onClick={() => send()}
-              disabled={busy || !draft.trim()}
-              title="Enviar"
-              style={{ width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: draft.trim() ? "#F54E00" : "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: draft.trim() ? "#0B0C10" : "rgba(244,244,242,0.35)", cursor: "pointer", transition: "background .15s" }}
-            >
-              <svg viewBox="0 0 24 24" style={{ width: 16, height: 16 }}>
-                <path d="M12 19 V5 M6 11 L12 5 L18 11" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+            <div className="flex items-end gap-1 p-1.5 rounded-2xl bg-surface-2 border border-line/10 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/10 transition">
+              <label
+                title="Foto de uma refeição"
+                className={cn(
+                  "w-9 h-9 flex-none rounded-lg flex items-center justify-center text-fg-3 transition-colors",
+                  busy ? "opacity-50" : "cursor-pointer hover:text-fg hover:bg-line/[0.06]"
+                )}
+              >
+                <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} disabled={busy} className="hidden" />
+                <IconCamera className="w-[18px] h-[18px]" />
+              </label>
+              <textarea
+                ref={taRef}
+                rows={1}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                aria-label="Mensagem para o Holiday"
+                placeholder={talking ? "Em conversa por voz — também podes escrever" : "Escreve ao Holiday…"}
+                className="flex-1 min-w-0 resize-none bg-transparent outline-none text-[14px] leading-[1.5] text-fg placeholder:text-fg-3 py-2 px-1 max-h-40"
+              />
+              {canTalk && (
+                <button
+                  onClick={toggleConversation}
+                  title={talking ? "Terminar conversa" : "Conversar por voz"}
+                  aria-pressed={talking}
+                  className={cn(
+                    "w-9 h-9 flex-none rounded-lg flex items-center justify-center transition-colors",
+                    talking ? "bg-danger/15 text-danger hover:bg-danger/20" : "text-fg-3 hover:text-fg hover:bg-line/[0.06]"
+                  )}
+                >
+                  {talking ? <IconStop className="w-4 h-4" /> : <IconMic className="w-[18px] h-[18px]" />}
+                </button>
+              )}
+              <button
+                onClick={() => send()}
+                disabled={busy || !draft.trim()}
+                title="Enviar"
+                aria-label="Enviar"
+                className={cn(
+                  "w-9 h-9 flex-none rounded-lg flex items-center justify-center transition-colors",
+                  draft.trim() ? "bg-accent text-white hover:bg-accent/90" : "bg-line/[0.06] text-fg-3"
+                )}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4">
+                  <path d="M12 19 V5 M6 11 L12 5 L18 11" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+            <p className="hidden sm:block text-center text-[11px] text-fg-3">Enter para enviar · Shift+Enter para nova linha</p>
           </div>
         </div>
       </div>
 
       {/* Painel de contexto (computador) */}
-      <aside className="hidden lg:block" style={{ width: 300, flexShrink: 0, overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 10, padding: 18 }}>
-        {contextPanel}
-      </aside>
+      <aside className="hidden lg:block w-[300px] flex-none overflow-y-auto rounded-card border border-line/[0.07] bg-surface p-5">{contextPanel}</aside>
     </div>
   );
 }
@@ -668,14 +717,22 @@ function renderText(text: string) {
   let list: string[] = [];
   const inline = (t: string, k: number) =>
     t.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-      part.startsWith("**") && part.endsWith("**") ? <strong key={`${k}-${i}`}>{part.slice(2, -2)}</strong> : <span key={`${k}-${i}`}>{part}</span>
+      part.startsWith("**") && part.endsWith("**") ? (
+        <strong key={`${k}-${i}`} className="font-semibold">
+          {part.slice(2, -2)}
+        </strong>
+      ) : (
+        <span key={`${k}-${i}`}>{part}</span>
+      )
     );
   const flush = (k: number) => {
     if (!list.length) return;
     out.push(
-      <ul key={`ul${k}`} style={{ margin: "4px 0", paddingLeft: 18, listStyle: "disc" }}>
+      <ul key={`ul${k}`} className="my-1 pl-5 list-disc marker:text-fg-3">
         {list.map((li, i) => (
-          <li key={i} style={{ margin: "2px 0" }}>{inline(li, i)}</li>
+          <li key={i} className="my-0.5">
+            {inline(li, i)}
+          </li>
         ))}
       </ul>
     );
@@ -689,7 +746,7 @@ function renderText(text: string) {
     }
     flush(i);
     if (l.trim()) out.push(<div key={i}>{inline(l, i)}</div>);
-    else if (i > 0 && i < lines.length - 1) out.push(<div key={i} style={{ height: 6 }} />);
+    else if (i > 0 && i < lines.length - 1) out.push(<div key={i} className="h-2" />);
   });
   flush(lines.length);
   return out;

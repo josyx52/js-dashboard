@@ -1,36 +1,101 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap");
+/* Design tokens — fonte unica de cor, superficie e raio para toda a app.
+   O Tailwind (tailwind.config.ts) aponta para estas variaveis. */
+:root {
+  color-scheme: dark;
+  --bg: 10 10 12; /* fundo da app */
+  --surface: 17 18 21; /* cartoes */
+  --surface-2: 23 24 28; /* cartoes dentro de cartoes, inputs */
+  --surface-3: 30 32 37; /* hover */
+  --line: 255 255 255; /* bordas: usar com /alpha */
+  --fg: 237 237 236; /* texto principal */
+  --fg-2: 161 161 166; /* texto secundario */
+  --fg-3: 110 110 116; /* legendas, desativado */
+  --accent: 245 78 0; /* laranja da marca — acoes principais e item ativo */
+  --success: 52 199 123;
+  --warning: 232 185 63;
+  --danger: 239 99 99;
+  --info: 59 135 229;
+  --violet: 139 124 246;
+  --radius: 10px;
+}
 
+html,
+body {
+  height: 100%;
+}
 body {
   margin: 0;
-  background: #0b0c10;
-  color: #f4f4f2;
-  font-family: 'Inter', system-ui, sans-serif;
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: "Inter", system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 ::selection {
-  background: rgba(245, 78, 0, 0.35);
+  background: rgb(var(--accent) / 0.35);
 }
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 2px;
+  background: rgb(var(--line) / 0.1);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--line) / 0.18);
+}
+:focus-visible {
+  outline: 2px solid rgb(var(--accent) / 0.8);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 a {
-  color: #f54e00;
+  color: rgb(var(--accent));
   text-decoration: none;
 }
 a:hover {
-  color: #ff8142;
   text-decoration: underline;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.18s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

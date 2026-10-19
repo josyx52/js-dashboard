@@ -1,8 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { localDateKey } from "@/lib/dates";
 import { plainTitle } from "@/lib/text";
 import { PILLARS, TaskCache } from "@/lib/types";
+import { cn } from "@/lib/cn";
+import { Button, Card, ColorDot, EmptyState, Input, Label, Modal, Page, PageHeader, Select, Skeleton, useToast } from "@/components/ui";
+import { IconAgendar } from "@/components/icons";
 
 interface CalEvent {
   id: string;
@@ -11,13 +15,20 @@ interface CalEvent {
   end: string;
 }
 
-function pillarMeta(key: string | null) {
-  const p = PILLARS.find((p) => p.key === key);
-  return { label: p ? p.label : "Hábito", color: p ? p.color : "rgba(244,244,242,0.4)" };
+interface Row {
+  key: string;
+  time: string;
+  label: string;
+  color: string;
+  title: string;
+  kind: "event" | "task";
 }
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
+const EVENT_COLOR = "rgb(var(--accent))";
+
+function pillarMeta(key: string | null) {
+  const p = PILLARS.find((p) => p.key === key);
+  return { label: p ? p.label : "Hábito", color: p ? p.color : "rgb(var(--fg-3))" };
 }
 
 function weekDays() {
@@ -35,9 +46,11 @@ function weekDays() {
 }
 
 export default function AgendarPage() {
+  const toast = useToast();
   const [tasks, setTasks] = useState<TaskCache[] | null>(null);
   const [events, setEvents] = useState<CalEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState(() => localDateKey());
 
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
@@ -45,7 +58,7 @@ export default function AgendarPage() {
   const [startT, setStartT] = useState("");
   const [endT, setEndT] = useState("");
   const [reminder, setReminder] = useState("30");
-  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -73,26 +86,31 @@ export default function AgendarPage() {
     }
   }
 
+  function openForm() {
+    setFormError(null);
+    if (!date) setDate(selected);
+    setShowForm(true);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title || !date || !startT || !endT) {
-      setMsg({ type: "err", text: "preenche todos os campos" });
+      setFormError("Preenche todos os campos.");
       return;
     }
-    // Hora local do browser -> ISO com fuso correto. Antes o offset estava
-    // fixo em +01:00 e no horario de inverno os eventos ficavam 1h ao lado.
+    // Hora local do browser -> ISO com fuso correto.
     const start = new Date(`${date}T${startT}:00`);
     const end = new Date(`${date}T${endT}:00`);
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      setMsg({ type: "err", text: "data ou hora invalida" });
+      setFormError("Data ou hora inválida.");
       return;
     }
     if (end <= start) {
-      setMsg({ type: "err", text: "o fim tem de ser depois do início" });
+      setFormError("O fim tem de ser depois do início.");
       return;
     }
     setSending(true);
-    setMsg(null);
+    setFormError(null);
     try {
       await api("/api/schedule", {
         body: {
@@ -102,134 +120,184 @@ export default function AgendarPage() {
           reminder_minutes: parseInt(reminder, 10),
         },
       });
-      setMsg({ type: "ok", text: `Agendado — lembrete ${reminder} min antes.` });
+      toast.success("Evento agendado", `${title} · lembrete ${reminder === "1440" ? "1 dia" : reminder + " min"} antes`);
+      setSelected(date);
       setTitle(""); setDate(""); setStartT(""); setEndT("");
+      setShowForm(false);
       await loadEvents();
     } catch (e: any) {
-      setMsg({ type: "err", text: e.message });
+      setFormError(e.message);
     } finally {
       setSending(false);
     }
   }
 
   const days = weekDays();
-  const today = new Date();
-  const todayIso = isoDate(today);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const tomorrowIso = isoDate(tomorrow);
+  const todayIso = localDateKey();
+  const loading = tasks === null && events === null && !error;
 
-  function rowsForDate(iso: string) {
+  function rowsForDate(iso: string): Row[] {
     const taskRows = (tasks || [])
       .filter((t) => t.due === iso)
       .map((t) => {
         const meta = pillarMeta(t.pillar);
-        return { key: "t-" + t.id, time: "", label: meta.label, color: meta.color, title: plainTitle(t.content) };
+        return { key: "t-" + t.id, time: "", label: meta.label, color: meta.color, title: plainTitle(t.content), kind: "task" as const };
       });
     const eventRows = (events || [])
-      .filter((e) => e.start.slice(0, 10) === iso)
+      .filter((e) => localDateKey(new Date(e.start)) === iso)
+      .sort((a, b) => a.start.localeCompare(b.start))
       .map((e) => ({
         key: "e-" + e.id,
         time: new Date(e.start).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }),
-        label: "Evento", color: "#F54E00", title: e.summary,
+        label: "Evento",
+        color: EVENT_COLOR,
+        title: e.summary,
+        kind: "event" as const,
       }));
     return [...eventRows, ...taskRows];
   }
 
-  const DayGroup = (p: { label: string; iso: string }) => {
-    const rows = rowsForDate(p.iso);
-    return (
-      <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, marginBottom: 16, overflow: "hidden" }}>
-        <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)", font: "600 12px 'JetBrains Mono',monospace", letterSpacing: "0.04em", color: "rgba(244,244,242,0.5)" }}>
-          {p.label} · {p.iso.slice(8, 10)}/{p.iso.slice(5, 7)}
-        </div>
-        {rows.length === 0 && (
-          <div style={{ padding: "14px 18px", font: "500 12.5px Inter,sans-serif", color: "rgba(244,244,242,0.3)" }}>nada agendado</div>
-        )}
-        {rows.map((r) => (
-          <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-            <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "#F54E00", width: 46, flexShrink: 0 }}>{r.time}</span>
-            <span style={{ font: "600 10px 'JetBrains Mono',monospace", letterSpacing: "0.03em", color: r.color, background: `${r.color}1a`, border: `1px solid ${r.color}40`, padding: "3px 8px", borderRadius: 3, flexShrink: 0 }}>
-              {r.label}
-            </span>
-            <span style={{ flex: 1, font: "500 13px Inter,sans-serif" }}>{r.title}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
+  const selDate = new Date(selected + "T12:00:00");
+  const selLabel =
+    selected === todayIso
+      ? "Hoje"
+      : selDate.toLocaleDateString("pt-PT", { weekday: "long" }).replace(/^\w/, (c) => c.toUpperCase());
+  const rows = rowsForDate(selected);
 
   return (
-    <div className="p-4 sm:p-[28px_36px] flex flex-col">
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          style={{ padding: "8px 16px", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 4, color: "rgba(244,244,242,0.7)", font: "700 11px 'JetBrains Mono',monospace", cursor: "pointer" }}
-        >
-          {showForm ? "FECHAR" : "+ AGENDAR LEMBRETE"}
-        </button>
-      </div>
+    <Page>
+      <PageHeader
+        title="Agenda"
+        description="Eventos do Google Calendar e tarefas com data, dia a dia."
+        actions={
+          <Button variant="primary" onClick={openForm}>
+            Novo evento
+          </Button>
+        }
+      />
 
-      {showForm && (
-        <form onSubmit={submit} style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 20, display: "flex", flexDirection: "column", gap: 10, marginBottom: 16, maxWidth: 560 }}>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título"
-            className="bg-bg border border-white/10 rounded px-3 py-2.5 text-[13px] outline-none focus:border-accent" />
-          <div className="flex gap-2">
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-              className="flex-1 bg-bg border border-white/10 rounded px-3 py-2.5 text-[13px] font-mono outline-none focus:border-accent" />
-            <input type="time" value={startT} onChange={(e) => setStartT(e.target.value)}
-              className="flex-1 bg-bg border border-white/10 rounded px-3 py-2.5 text-[13px] font-mono outline-none focus:border-accent" />
-            <input type="time" value={endT} onChange={(e) => setEndT(e.target.value)}
-              className="flex-1 bg-bg border border-white/10 rounded px-3 py-2.5 text-[13px] font-mono outline-none focus:border-accent" />
-          </div>
-          <select value={reminder} onChange={(e) => setReminder(e.target.value)}
-            className="bg-bg border border-white/10 rounded px-3 py-2.5 text-[13px] outline-none">
-            <option value="5">5 minutos antes</option>
-            <option value="10">10 minutos antes</option>
-            <option value="30">30 minutos antes</option>
-            <option value="60">1 hora antes</option>
-            <option value="1440">1 dia antes</option>
-          </select>
-          {msg && (
-            <div className="px-3.5 py-2 rounded text-[12.5px] font-mono" style={msg.type === "ok" ? { background: "rgba(61,220,132,0.1)", color: "#3DDC84" } : { background: "rgba(255,95,95,0.1)", color: "#FF5F5F" }}>
-              {msg.text}
-            </div>
-          )}
-          <button type="submit" disabled={sending} className="px-4 py-2.5 bg-accent border-none rounded text-bg font-mono font-bold text-[12px] disabled:opacity-50">
-            {sending ? "a agendar…" : "AGENDAR"}
-          </button>
-        </form>
+      {error && (
+        <Card className="border-danger/30 px-4 py-3 text-[13px] text-danger">Não foi possível carregar a agenda: {error}</Card>
       )}
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 20, overflowX: "auto" }} className="lg:grid" >
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2" role="tablist" aria-label="Dias da semana">
         {days.map((d) => {
-          const iso = isoDate(d);
+          const iso = localDateKey(d);
           const isToday = iso === todayIso;
+          const active = iso === selected;
+          const n = loading ? 0 : rowsForDate(iso).length;
           return (
-            <div
+            <button
               key={iso}
-              style={{
-                border: `1px solid ${isToday ? "#F54E00" : "rgba(255,255,255,0.08)"}`,
-                background: isToday ? "rgba(245,78,0,0.12)" : "#14161B",
-                borderRadius: 6, padding: "14px 8px", textAlign: "center",
-                minWidth: 64, flex: "1 0 64px",
-              }}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSelected(iso)}
+              className={cn(
+                "rounded-card border py-2.5 sm:py-3 flex flex-col items-center gap-0.5 transition-colors",
+                active ? "bg-surface-2 border-line/20" : "bg-surface border-line/[0.07] hover:border-line/15"
+              )}
             >
-              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: isToday ? "#F54E00" : "rgba(244,244,242,0.4)", marginBottom: 4 }}>
-                {d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3).toUpperCase()}
-              </div>
-              <div style={{ font: "700 20px 'JetBrains Mono',monospace", color: isToday ? "#F54E00" : "#F4F4F2" }}>
-                {String(d.getDate()).padStart(2, "0")}
-              </div>
-            </div>
+              <span className={cn("text-[10.5px] sm:text-[11px] font-medium uppercase tracking-[0.04em]", isToday ? "text-accent" : "text-fg-3")}>
+                {d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3)}
+              </span>
+              <span className={cn("text-[17px] sm:text-[20px] font-semibold tabular leading-tight", isToday ? "text-accent" : "text-fg")}>{d.getDate()}</span>
+              <span className={cn("h-1.5 w-1.5 rounded-full", n ? "bg-fg-2" : "bg-transparent")} aria-label={n ? `${n} itens` : undefined} />
+            </button>
           );
         })}
       </div>
 
-      {error && <div className="text-red-400 text-[12px] font-mono mb-3">{error}</div>}
+      <Card className="overflow-hidden">
+        <div className="flex items-baseline gap-2 px-5 pt-4 pb-3 border-b border-line/[0.06]">
+          <h3 className="text-[13.5px] font-semibold">{selLabel}</h3>
+          <span className="text-[12.5px] text-fg-3">{selDate.toLocaleDateString("pt-PT", { day: "numeric", month: "long" })}</span>
+          <span className="ml-auto text-[12px] text-fg-3 tabular">{loading ? "" : `${rows.length} ${rows.length === 1 ? "item" : "itens"}`}</span>
+        </div>
+        {loading ? (
+          <div className="p-5 flex flex-col gap-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-5" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={<IconAgendar className="w-5 h-5" />}
+            title="Nada agendado"
+            description="Sem eventos nem tarefas com data para este dia."
+            action={
+              <Button size="sm" onClick={openForm}>
+                Agendar evento
+              </Button>
+            }
+          />
+        ) : (
+          <ul>
+            {rows.map((r) => (
+              <li key={r.key} className="flex items-center gap-3 px-5 h-12 border-b border-line/[0.05] last:border-b-0 hover:bg-line/[0.025]">
+                <span className="w-12 flex-none text-[12.5px] tabular font-medium text-fg-2">{r.time || "—"}</span>
+                <span className="flex-1 min-w-0 truncate text-[13.5px]">{r.title}</span>
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-fg-3 flex-none">
+                  <ColorDot color={r.color} />
+                  {r.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
-      <DayGroup label="HOJE" iso={todayIso} />
-      <DayGroup label="AMANHÃ" iso={tomorrowIso} />
-    </div>
+      <Modal
+        open={showForm}
+        onClose={() => !sending && setShowForm(false)}
+        title="Novo evento"
+        description="Cria o evento no Google Calendar com um lembrete."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowForm(false)} disabled={sending}>
+              Cancelar
+            </Button>
+            <Button variant="primary" type="submit" form="schedule-form" loading={sending}>
+              Agendar
+            </Button>
+          </>
+        }
+      >
+        <form id="schedule-form" onSubmit={submit} className="flex flex-col gap-4">
+          <div>
+            <Label>Título</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Consulta, reunião, treino" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label>Data</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div>
+              <Label>Início</Label>
+              <Input type="time" value={startT} onChange={(e) => setStartT(e.target.value)} />
+            </div>
+            <div>
+              <Label>Fim</Label>
+              <Input type="time" value={endT} onChange={(e) => setEndT(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <Label>Lembrete</Label>
+            <Select value={reminder} onChange={(e) => setReminder(e.target.value)}>
+              <option value="5">5 minutos antes</option>
+              <option value="10">10 minutos antes</option>
+              <option value="30">30 minutos antes</option>
+              <option value="60">1 hora antes</option>
+              <option value="1440">1 dia antes</option>
+            </Select>
+          </div>
+          {formError && (
+            <p role="alert" className="text-[12.5px] text-danger">
+              {formError}
+            </p>
+          )}
+        </form>
+      </Modal>
+    </Page>
   );
 }

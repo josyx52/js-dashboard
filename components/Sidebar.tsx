@@ -1,59 +1,156 @@
 "use client";
-import { usePathname, useRouter } from "next/navigation";
-import { PILLARS } from "@/lib/types";
-import { IconDashboard, IconNutricao, IconPlug, IconAgendar, IconAgente, IconAutomacao } from "@/components/icons";
+import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/cn";
+import {
+  IconDashboard,
+  IconNutricao,
+  IconPlug,
+  IconAgendar,
+  IconAgente,
+  IconAutomacao,
+  IconMore,
+  IconLogout,
+} from "@/components/icons";
 
-const NAV = [
-  { href: "/dashboard", label: "Dashboard", Icon: IconDashboard },
-  { href: "/nutricao", label: "Nutrição", Icon: IconNutricao },
-  { href: "/integracoes", label: "Integrações", Icon: IconPlug },
-  { href: "/agendar", label: "Agendar", Icon: IconAgendar },
-  { href: "/agente", label: "Holiday", Icon: IconAgente },
-  { href: "/automacoes", label: "Automações", Icon: IconAutomacao },
+type Item = { href: string; label: string; Icon: (p: { className?: string }) => React.ReactElement };
+
+const GROUPS: { label: string; items: Item[] }[] = [
+  {
+    label: "Principal",
+    items: [
+      { href: "/dashboard", label: "Dashboard", Icon: IconDashboard },
+      { href: "/agente", label: "Holiday", Icon: IconAgente },
+      { href: "/automacoes", label: "Automações", Icon: IconAutomacao },
+    ],
+  },
+  {
+    label: "Vida",
+    items: [
+      { href: "/nutricao", label: "Nutrição", Icon: IconNutricao },
+      { href: "/agendar", label: "Agenda", Icon: IconAgendar },
+    ],
+  },
+  { label: "Sistema", items: [{ href: "/integracoes", label: "Integrações", Icon: IconPlug }] },
 ];
+const ALL = GROUPS.flatMap((g) => g.items);
+// No telemovel: 4 atalhos + "Mais" com o resto.
+const MOBILE_MAIN = ["/dashboard", "/agente", "/automacoes", "/nutricao"];
 
-export default function Sidebar() {
-  const pathname = usePathname();
-  const router = useRouter();
+async function logout() {
+  await fetch("/api/auth/login", { method: "DELETE" }).catch(() => {});
+  window.location.href = "/login";
+}
+
+function Logo() {
   return (
-    <div className="w-full md:w-[224px] flex-none border-b md:border-b-0 md:border-r border-white/[0.08] p-[10px_12px] md:p-[20px_14px] flex flex-row md:flex-col gap-2 md:gap-[26px] items-center md:items-stretch overflow-x-auto md:overflow-visible">
-      <div className="flex items-center gap-2.5 px-1.5 py-1 flex-none">
-        <div className="w-7 h-7 flex-none bg-accent rounded flex items-center justify-center font-mono font-extrabold text-[13px] text-bg">
-          JS
-        </div>
-      </div>
-
-      <div className="hidden md:block font-mono font-semibold text-[10px] tracking-[0.08em] text-white/35 px-2.5 mb-[-8px]">
-        VISÃO GERAL
-      </div>
-      <div className="flex flex-row md:flex-col gap-0.5 flex-none">
-        {NAV.map((item) => {
-          const active = pathname?.startsWith(item.href);
-          return (
-            <div
-              key={item.href}
-              onClick={() => router.push(item.href)}
-              className={
-                "flex items-center gap-2.5 px-2.5 py-[9px] rounded cursor-pointer font-sans font-semibold text-[13px] transition-colors whitespace-nowrap flex-none " +
-                (active ? "bg-white/[0.06] text-accent" : "text-white/60 hover:bg-white/[0.04]")
-              }
-            >
-              <item.Icon className="w-4 h-4 flex-none" />
-              <span className="hidden sm:inline md:inline">{item.label}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="hidden md:flex mt-auto p-2.5 border border-white/[0.08] rounded flex-col gap-1.5">
-        <div className="font-mono font-semibold text-[10px] tracking-[0.06em] text-white/35">PILARES</div>
-        {PILLARS.map((p) => (
-          <div key={p.key} className="flex items-center gap-2 font-sans font-medium text-[12px] text-white/70">
-            <div style={{ width: 7, height: 7, borderRadius: 1, background: p.color, flexShrink: 0 }} />
-            {p.label}
-          </div>
-        ))}
+    <div className="flex items-center gap-2.5">
+      <div className="w-7 h-7 rounded-lg bg-accent text-white flex items-center justify-center text-[12px] font-bold tracking-tight">JS</div>
+      <div className="leading-tight">
+        <div className="text-[13px] font-semibold text-fg">Sistema JS</div>
+        <div className="text-[11px] text-fg-3">6 pilares</div>
       </div>
     </div>
+  );
+}
+
+export default function Sidebar() {
+  const pathname = usePathname() || "";
+  const [more, setMore] = useState(false);
+  const isActive = (href: string) => pathname.startsWith(href);
+
+  return (
+    <>
+      {/* Computador */}
+      <aside className="hidden md:flex w-[232px] flex-none flex-col border-r border-line/[0.07] bg-bg h-screen sticky top-0">
+        <div className="px-4 pt-5 pb-6">
+          <Logo />
+        </div>
+        <nav className="flex-1 px-2.5 flex flex-col gap-5 overflow-y-auto" aria-label="Navegação">
+          {GROUPS.map((g) => (
+            <div key={g.label}>
+              <div className="px-2.5 mb-1.5 text-[11px] font-medium text-fg-3">{g.label}</div>
+              <div className="flex flex-col gap-0.5">
+                {g.items.map(({ href, label, Icon }) => {
+                  const active = isActive(href);
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "group flex items-center gap-2.5 h-8 px-2.5 rounded-lg text-[13px] font-medium no-underline hover:no-underline transition-colors",
+                        active ? "bg-line/[0.07] text-fg" : "text-fg-2 hover:text-fg hover:bg-line/[0.04]"
+                      )}
+                    >
+                      <Icon className={cn("w-4 h-4 flex-none", active ? "text-accent" : "text-fg-3 group-hover:text-fg-2")} />
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+        <div className="p-2.5 border-t border-line/[0.07]">
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-2.5 h-8 px-2.5 rounded-lg text-[13px] font-medium text-fg-3 hover:text-fg hover:bg-line/[0.04] transition-colors"
+          >
+            <IconLogout className="w-4 h-4" />
+            Sair
+          </button>
+        </div>
+      </aside>
+
+      {/* Telemovel: cabecalho */}
+      <header className="md:hidden sticky top-0 z-30 h-[52px] flex items-center px-4 border-b border-line/[0.07] bg-bg/90 backdrop-blur">
+        <Logo />
+      </header>
+
+      {/* Telemovel: barra de navegacao em baixo */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 h-[62px] pb-[env(safe-area-inset-bottom)] border-t border-line/[0.08] bg-bg/95 backdrop-blur flex"
+        aria-label="Navegação"
+      >
+        {ALL.filter((i) => MOBILE_MAIN.includes(i.href)).map(({ href, label, Icon }) => {
+          const active = isActive(href);
+          return (
+            <Link key={href} href={href} className={cn("flex-1 flex flex-col items-center justify-center gap-1 no-underline hover:no-underline", active ? "text-fg" : "text-fg-3")}>
+              <Icon className={cn("w-5 h-5", active && "text-accent")} />
+              <span className="text-[10.5px] font-medium">{label}</span>
+            </Link>
+          );
+        })}
+        <button onClick={() => setMore(true)} className={cn("flex-1 flex flex-col items-center justify-center gap-1", more ? "text-fg" : "text-fg-3")}>
+          <IconMore className="w-5 h-5" />
+          <span className="text-[10.5px] font-medium">Mais</span>
+        </button>
+      </nav>
+
+      {more && (
+        <div className="md:hidden fixed inset-0 z-50 bg-black/60" onClick={() => setMore(false)}>
+          <div className="absolute bottom-0 inset-x-0 bg-surface border-t border-line/10 rounded-t-2xl p-3 pb-[calc(12px+env(safe-area-inset-bottom))] animate-fade-up" onClick={(e) => e.stopPropagation()}>
+            <div className="w-10 h-1 rounded-full bg-line/15 mx-auto mb-3" />
+            {ALL.filter((i) => !MOBILE_MAIN.includes(i.href)).map(({ href, label, Icon }) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMore(false)}
+                className="flex items-center gap-3 h-12 px-3 rounded-xl text-[14px] font-medium text-fg no-underline hover:no-underline hover:bg-line/[0.05]"
+              >
+                <Icon className="w-5 h-5 text-fg-2" />
+                {label}
+              </Link>
+            ))}
+            <button onClick={logout} className="w-full flex items-center gap-3 h-12 px-3 rounded-xl text-[14px] font-medium text-fg-2 hover:bg-line/[0.05]">
+              <IconLogout className="w-5 h-5" />
+              Sair
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

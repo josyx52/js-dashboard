@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Button, Input, Label } from "@/components/ui";
 
 function LoginForm() {
   const params = useSearchParams();
@@ -29,33 +30,49 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={submit} className="w-full max-w-[320px] flex flex-col gap-3">
-      <div className="w-9 h-9 bg-accent rounded flex items-center justify-center font-mono font-extrabold text-[15px] text-bg">
-        JS
+    <div className="w-full max-w-[380px] animate-fade-up">
+      <div className="flex flex-col items-center text-center mb-6">
+        <div className="w-11 h-11 rounded-xl bg-accent flex items-center justify-center text-white font-bold text-[15px] tracking-tight shadow-[0_8px_24px_-6px_rgb(var(--accent)/0.55)]">
+          JS
+        </div>
+        <h1 className="mt-4 text-[20px] font-semibold tracking-[-0.01em]">Sistema JS</h1>
+        <p className="text-[13px] text-fg-3 mt-1">Entra para continuar</p>
       </div>
-      <input
-        type="password"
-        autoFocus
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        placeholder="palavra-passe"
-        className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] font-mono outline-none focus:border-accent"
-      />
-      <button
-        type="submit"
-        disabled={loading || !password}
-        className="px-3 py-2 bg-accent border-none rounded text-bg font-mono font-bold text-[11px] disabled:opacity-50"
-      >
-        {loading ? "…" : "ENTRAR"}
-      </button>
-      {error && <div className="font-mono text-[11.5px] text-red-400">{error}</div>}
-    </form>
+      <form onSubmit={submit} className="bg-surface border border-line/[0.07] rounded-2xl shadow-pop p-6 flex flex-col gap-4">
+        <div>
+          <Label>Palavra-passe</Label>
+          <Input
+            type="password"
+            autoFocus
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="••••••••"
+            aria-invalid={!!error}
+            aria-describedby={error ? "login-error" : undefined}
+            className={error ? "border-danger/60 focus:border-danger/70 focus:ring-danger/15" : undefined}
+          />
+          {error && (
+            <p id="login-error" role="alert" className="text-[12px] text-danger mt-1.5">
+              {error}
+            </p>
+          )}
+        </div>
+        <Button type="submit" variant="primary" loading={loading} disabled={loading || !password} className="w-full justify-center">
+          Entrar
+        </Button>
+      </form>
+      <p className="text-center text-[11.5px] text-fg-3 mt-5">Sessão válida durante 30 dias neste dispositivo.</p>
+    </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-bg bg-[radial-gradient(ellipse_at_top,rgb(var(--accent)/0.08),transparent_60%)]">
       <Suspense>
         <LoginForm />
       </Suspense>

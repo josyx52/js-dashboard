@@ -123,3 +123,18 @@ export const IconAutomacao = (props: { className?: string }) => (
     <path d="M18.5 3.5 V7 H15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+
+export const IconMore = (props: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={props.className}>
+    <circle cx="5" cy="12" r="1.8" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.8" fill="currentColor" />
+    <circle cx="19" cy="12" r="1.8" fill="currentColor" />
+  </svg>
+);
+
+export const IconLogout = (props: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={props.className}>
+    <path d="M10 5 H6 A2 2 0 0 0 4 7 V17 A2 2 0 0 0 6 19 H10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    <path d="M15 8 L19 12 L15 16 M19 12 H9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);

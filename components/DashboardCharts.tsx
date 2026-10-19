@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Card, Segmented } from "@/components/ui";
 
 // Graficos do dashboard. Cores validadas (dataviz validate_palette, modo
 // escuro, superficie #14161B): estados Atrasadas/Hoje/Sem data passam
@@ -8,24 +9,27 @@ import { useState } from "react";
 
 export const STATE_COLORS = { overdue: "#e66767", today: "#3987e5", undated: "#c98500" } as const;
 const DONE_COLOR = "#199e70";
-const INK = { primary: "#F4F4F2", secondary: "rgba(244,244,242,0.62)", muted: "rgba(244,244,242,0.4)" };
+const INK = { primary: "rgb(var(--fg))", secondary: "rgb(var(--fg-2))", muted: "rgb(var(--fg-3))" };
 const GRID = "rgba(255,255,255,0.07)";
 const mono = (w: number, size: number) => `${w} ${size}px 'JetBrains Mono',monospace`;
-const cardStyle: React.CSSProperties = { border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: "16px 18px" };
+const cardStyle: React.CSSProperties = { padding: "16px 20px" };
 
 function CardHead(props: { title: string; subtitle?: string; table: boolean; onTable: () => void }) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ font: "700 13px Inter,sans-serif", color: INK.primary }}>{props.title}</div>
-        {props.subtitle && <div style={{ font: "500 11.5px Inter,sans-serif", color: INK.muted, marginTop: 2 }}>{props.subtitle}</div>}
+    <div className="flex items-start gap-3 mb-4">
+      <div className="flex-1 min-w-0">
+        <h3 className="text-[13.5px] font-semibold text-fg">{props.title}</h3>
+        {props.subtitle && <p className="text-[12.5px] text-fg-3 mt-1">{props.subtitle}</p>}
       </div>
-      <button
-        onClick={props.onTable}
-        style={{ font: mono(600, 9.5), color: INK.muted, background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 3, padding: "3px 7px", cursor: "pointer" }}
-      >
-        {props.table ? "GRÁFICO" : "TABELA"}
-      </button>
+      <Segmented<"chart" | "table">
+        size="sm"
+        value={props.table ? "table" : "chart"}
+        onChange={(v) => v === "table" !== props.table && props.onTable()}
+        options={[
+          { value: "chart", label: "Gráfico" },
+          { value: "table", label: "Tabela" },
+        ]}
+      />
     </div>
   );
 }
@@ -88,7 +92,7 @@ export function PillarStackCard(props: { rows: PillarRow[] }) {
   const total = props.rows.reduce((a, r) => a + r.overdue + r.today + r.undated, 0);
 
   return (
-    <div style={cardStyle}>
+    <Card style={cardStyle}>
       <CardHead title="Tarefas abertas por pilar" subtitle={`${total} no total · futuras não contam`} table={table} onTable={() => setTable(!table)} />
       {table ? (
         <Table head={["Pilar", "Atrasadas", "Hoje", "Sem data", "Total"]} rows={props.rows.map((r) => [r.label, r.overdue, r.today, r.undated, r.overdue + r.today + r.undated])} />
@@ -127,7 +131,7 @@ export function PillarStackCard(props: { rows: PillarRow[] }) {
             })}
             <div data-chart style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
               {hover && (
-                <div style={{ position: "absolute", left: Math.min(hover.x + 12, 260), top: hover.y - 40, background: "#0B0C10", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 4, padding: "6px 9px", font: "500 11.5px Inter,sans-serif", color: INK.primary, whiteSpace: "nowrap" }}>
+                <div style={{ position: "absolute", left: Math.min(hover.x + 12, 260), top: hover.y - 40, background: "rgb(var(--surface-3))", border: "1px solid rgb(255 255 255 / 0.1)", borderRadius: 8, boxShadow: "0 8px 24px -8px rgb(0 0 0 / .6)", padding: "6px 9px", font: "500 11.5px Inter,sans-serif", color: INK.primary, whiteSpace: "nowrap" }}>
                   {hover.row} · {hover.seg}: <b>{hover.value}</b>
                 </div>
               )}
@@ -135,7 +139,7 @@ export function PillarStackCard(props: { rows: PillarRow[] }) {
           </div>
         </>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -201,7 +205,7 @@ function MiniChart(props: {
           p.value === null || (i !== n - 1 && hover !== i) ? null : (
             <span
               key={p.date}
-              style={{ position: "absolute", left: `${x(i)}%`, top: `${(y(p.value) / H) * 100}%`, width: 9, height: 9, marginLeft: -4.5, marginTop: -4.5, borderRadius: "50%", background: props.color, boxShadow: "0 0 0 2px #14161B", pointerEvents: "none" }}
+              style={{ position: "absolute", left: `${x(i)}%`, top: `${(y(p.value) / H) * 100}%`, width: 9, height: 9, marginLeft: -4.5, marginTop: -4.5, borderRadius: "50%", background: props.color, boxShadow: "0 0 0 2px rgb(var(--surface))", pointerEvents: "none" }}
             />
           )
         )}
@@ -211,7 +215,7 @@ function MiniChart(props: {
         <span>hoje</span>
       </div>
       {hover !== null && (
-        <div style={{ position: "absolute", left: `${Math.min(Math.max(x(hover), 12), 80)}%`, top: 0, transform: "translateX(-50%)", background: "#0B0C10", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 4, padding: "5px 8px", font: "500 11.5px Inter,sans-serif", color: INK.primary, whiteSpace: "nowrap", pointerEvents: "none" }}>
+        <div style={{ position: "absolute", left: `${Math.min(Math.max(x(hover), 12), 80)}%`, top: 0, transform: "translateX(-50%)", background: "rgb(var(--surface-3))", border: "1px solid rgb(255 255 255 / 0.1)", borderRadius: 8, boxShadow: "0 8px 24px -8px rgb(0 0 0 / .6)", padding: "5px 8px", font: "500 11.5px Inter,sans-serif", color: INK.primary, whiteSpace: "nowrap", pointerEvents: "none" }}>
           {dayLabel(props.points[hover].date)} · <b>{props.points[hover].value ?? "sem dados"}</b>
         </div>
       )}
@@ -231,7 +235,7 @@ export function HistoryCard(props: { rows: HistoryRow[]; days: number; today: st
   const withData = props.rows.length;
 
   return (
-    <div style={cardStyle}>
+    <Card style={cardStyle}>
       <CardHead
         title={`Últimos ${props.days} dias`}
         subtitle={withData < 2 ? "o Holiday começou a registar o histórico há pouco — enche-se dia a dia" : `${withData} dias registados pelo Holiday`}
@@ -249,76 +253,7 @@ export function HistoryCard(props: { rows: HistoryRow[]; days: number; today: st
           <MiniChart kind="line" color={STATE_COLORS.overdue} points={overdue} label="Atrasadas em aberto" />
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
-export interface ListItem {
-  id: string;
-  title: string;
-  date: string;
-  pillarLabel: string;
-  pillarColor: string;
-}
-
-export function TaskListCard(props: {
-  title: string;
-  items: ListItem[];
-  accentColor: string;
-  borderColor: string;
-  dateColor: string;
-  onComplete: (id: string) => void;
-  completingIds: Set<string>;
-}) {
-  return (
-    <div style={{ border: `1px solid ${props.borderColor}`, background: "#14161B", borderRadius: 6, overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-        <span style={{ font: "700 13px Inter,sans-serif" }}>{props.title}</span>
-        <span
-          style={{
-            font: "700 11px 'JetBrains Mono',monospace", padding: "2px 8px",
-            background: `${props.accentColor}26`, color: props.accentColor, borderRadius: 3,
-          }}
-        >
-          {props.items.length}
-        </span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {props.items.length === 0 && (
-          <div style={{ padding: "16px 18px", font: "500 12.5px Inter,sans-serif", color: "rgba(244,244,242,0.35)" }}>
-            nada por aqui
-          </div>
-        )}
-        {props.items.map((t) => {
-          const busy = props.completingIds.has(t.id);
-          return (
-            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-              <input
-                type="checkbox"
-                checked={busy}
-                onChange={() => props.onComplete(t.id)}
-                disabled={busy}
-                style={{ width: 15, height: 15, accentColor: "#F54E00", flexShrink: 0 }}
-              />
-              <span
-                style={{
-                  font: "600 10px 'JetBrains Mono',monospace", letterSpacing: "0.03em",
-                  padding: "3px 8px", borderRadius: 3, flexShrink: 0,
-                  color: t.pillarColor, background: `${t.pillarColor}1a`, border: `1px solid ${t.pillarColor}40`,
-                }}
-              >
-                {t.pillarLabel}
-              </span>
-              <span style={{ flex: 1, font: "500 13px Inter,sans-serif", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {t.title}
-              </span>
-              <span style={{ font: "500 11px 'JetBrains Mono',monospace", color: props.dateColor, flexShrink: 0 }}>
-                {t.date}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}

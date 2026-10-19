@@ -10,7 +10,8 @@ import type { Pillar } from "@/lib/types";
 
 export const HOLIDAY_TZ = "Europe/Lisbon";
 
-export type Bucket = "overdue" | "today" | "future" | "undated";
+import { taskBucket, type Bucket } from "@/lib/task-bucket";
+export { taskBucket, type Bucket };
 
 export interface SnapTask {
   id: string;
@@ -45,11 +46,6 @@ export interface Snapshot {
   lastSyncAt: string | null;
 }
 
-export function taskBucket(due: string | null, recurring: boolean, today: string): Bucket {
-  if (!due) return "undated";
-  if (due === today || (recurring && due < today)) return "today";
-  return due < today ? "overdue" : "future";
-}
 
 function localHour(d: Date): number {
   return Number(new Intl.DateTimeFormat("en-GB", { timeZone: HOLIDAY_TZ, hour: "2-digit", hour12: false }).format(d)) % 24;

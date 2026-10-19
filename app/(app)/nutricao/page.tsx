@@ -4,6 +4,10 @@ import { api } from "@/lib/api";
 import { localDateKey } from "@/lib/dates";
 import { calcBMR } from "@/lib/bmr";
 import { compressImageToBase64 } from "@/lib/image";
+import { cn } from "@/lib/cn";
+import { Badge, Button, Card, CardHeader, EmptyState, Input, Label, Modal, Page, PageHeader, Segmented, Select, Skeleton, useToast } from "@/components/ui";
+import { StatTile } from "@/components/StatTile";
+import { IconCamera, IconNutricao } from "@/components/icons";
 
 interface NutritionLog {
   id: string;
@@ -37,7 +41,9 @@ interface Profile {
 const GOAL_TARGET_PCT: Record<string, number> = { perder: 15, manter: 0, ganhar: -15 };
 const GOAL_LABEL: Record<string, string> = { perder: "Perder peso", manter: "Manter", ganhar: "Ganhar massa" };
 
-const SOURCE_COLORS: Record<string, string> = { foto: "#F54E00", manual: "#36CFC9", treino: "#8B7CF6" };
+const SOURCE_TONE: Record<string, "accent" | "info" | "violet"> = { foto: "accent", manual: "info", treino: "violet" };
+const IN_COLOR = "rgb(var(--accent))";
+const OUT_COLOR = "rgb(var(--info))";
 
 function dayRange(dateStr: string) {
   const start = new Date(dateStr + "T00:00:00");
@@ -50,12 +56,13 @@ function todayIso() {
 }
 
 export default function NutricaoPage() {
+  const toast = useToast();
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [logs, setLogs] = useState<NutritionLog[] | null>(null);
   const [weekLogs, setWeekLogs] = useState<NutritionLog[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [photoResult, setPhotoResult] = useState<{ label: string; kcal: number; protein_g?: number | null; carbs_g?: number | null; fat_g?: number | null } | null>(null);
 
   const [bodyHistory, setBodyHistory] = useState<BodyEntry[] | null>(null);
   const [steps, setSteps] = useState<number | null | undefined>(undefined);
@@ -76,6 +83,7 @@ export default function NutricaoPage() {
   const [kcal, setKcal] = useState("");
   const [type, setType] = useState<"in" | "out">("in");
   const [saving, setSaving] = useState(false);
+  const [showManual, setShowManual] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -88,7 +96,7 @@ export default function NutricaoPage() {
     api<{ steps: number | null; google_health_error: string | null }>(`/api/steps?date=${todayIso()}`)
       .then((d) => {
         setSteps(d.steps ?? null);
-        if (d.google_health_error) setError("Google Health: " + d.google_health_error);
+        setHealthError(d.google_health_error || null);
       })
       .catch(() => setSteps(null));
 
@@ -129,9 +137,10 @@ export default function NutricaoPage() {
         body: { height_cm: parseFloat(heightInput), age: parseInt(ageInput, 10), sex: sexInput, goal: goalInput },
       });
       setShowProfileForm(false);
+      toast.success("Perfil guardado");
       await load();
     } catch (e: any) {
-      setError(e.message);
+      toast.error("Não foi possível guardar o perfil", e.message);
     } finally {
       setSavingProfile(false);
     }
@@ -154,8 +163,9 @@ export default function NutricaoPage() {
     });
     const data = await res.json();
     setSavingBody(false);
-    if (data.error) setError(data.error);
+    if (data.error) toast.error("Não foi possível gravar a medição", data.error);
     else {
+      toast.success("Medição registada");
       setWeight("");
       setBodyFat("");
       setLeanMass("");
@@ -170,11 +180,13 @@ export default function NutricaoPage() {
     setSaving(true);
     try {
       await api("/api/nutrition/logs", { body: { label, kcal: parseFloat(kcal), type } });
+      toast.success(type === "in" ? "Refeição registada" : "Treino registado", `${label} · ${kcal} kcal`);
       setLabel("");
       setKcal("");
+      setShowManual(false);
       await load();
     } catch (e: any) {
-      setError(e.message);
+      toast.error("Não foi possível registar", e.message);
     } finally {
       setSaving(false);
     }
@@ -184,8 +196,6 @@ export default function NutricaoPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setAnalyzing(true);
-    setError(null);
-    setPhotoResult(null);
     try {
       const base64 = await compressImageToBase64(file);
       const res = await fetch("/api/nutrition/photo", {
@@ -195,17 +205,13 @@ export default function NutricaoPage() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setPhotoResult({
-        label: data.log.label,
-        kcal: data.log.kcal,
-        protein_g: data.log.protein_g,
-        carbs_g: data.log.carbs_g,
-        fat_g: data.log.fat_g,
-      });
+      const l = data.log;
+      const macros = l.protein_g != null || l.carbs_g != null || l.fat_g != null ? ` · P ${l.protein_g ?? "—"}g · C ${l.carbs_g ?? "—"}g · G ${l.fat_g ?? "—"}g` : "";
+      toast.success(`${l.label} · ${l.kcal} kcal`, `Refeição registada pela foto${macros}`);
       if (selectedDate !== todayIso()) setSelectedDate(todayIso());
       else await load();
     } catch (e: any) {
-      setError(e.message);
+      toast.error("Não foi possível analisar a foto", e.message);
     } finally {
       setAnalyzing(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -257,333 +263,347 @@ export default function NutricaoPage() {
     const key = localDateKey(d);
     const dayLogs = (weekLogs || []).filter((l) => localDateKey(new Date(l.created_at)) === key);
     days.push({
-      label: i === 0 ? "HOJE" : d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3).toUpperCase(),
+      label: i === 0 ? "Hoje" : d.toLocaleDateString("pt-PT", { weekday: "short" }).slice(0, 3),
       in: i === 0 ? caloriesIn : dayLogs.filter((l) => l.type === "in").reduce((s, l) => s + Number(l.kcal), 0),
       out: dayLogs.filter((l) => l.type === "out").reduce((s, l) => s + Number(l.kcal), 0),
     });
   }
   const maxCal = Math.max(1, ...days.flatMap((d) => [d.in, d.out]));
 
-  const StatCard = (p: { title: string; value: string; sub: string; color?: string; border?: string }) => (
-    <div style={{ border: `1px solid ${p.border || "rgba(255,255,255,0.08)"}`, background: "#14161B", borderRadius: 6, padding: "16px 18px" }}>
-      <div style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.05em", color: "rgba(244,244,242,0.4)" }}>{p.title}</div>
-      <div style={{ font: "700 26px 'JetBrains Mono',monospace", marginTop: 8, color: p.color || "#F4F4F2" }}>{p.value}</div>
-      <div style={{ font: "500 11px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.35)", marginTop: 4 }}>{p.sub}</div>
+  const isToday = selectedDate === todayIso();
+  const loading = logs === null && !error;
+  const selLabel = new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" });
+
+  const deficitTone: "default" | "success" | "warning" | "danger" =
+    deficitPct === null ? "default" : goalOnTrack === null ? (isDeficit ? "success" : "danger") : goalOnTrack ? "success" : "warning";
+
+  const BodyMetric = (p: { label: string; value: string; hint?: string }) => (
+    <div className="rounded-lg bg-surface-2 border border-line/[0.06] px-3.5 py-3">
+      <div className="text-[11.5px] font-medium text-fg-3">{p.label}</div>
+      <div className="text-[18px] font-semibold tabular mt-1 leading-none">{p.value}</div>
+      {p.hint && <div className="text-[11px] text-fg-3 mt-1">{p.hint}</div>}
     </div>
   );
 
   return (
-    <div className="p-4 sm:p-[28px_36px] flex flex-col gap-5">
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input
-            type="date"
-            value={selectedDate}
-            max={todayIso()}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            style={{ background: "#14161B", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 4, padding: "8px 10px", color: "#F4F4F2", font: "600 12px 'JetBrains Mono',monospace" }}
-          />
-          {selectedDate !== todayIso() && (
-            <button
-              onClick={() => setSelectedDate(todayIso())}
-              style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 4, padding: "8px 12px", color: "rgba(244,244,242,0.6)", font: "600 11px 'JetBrains Mono',monospace", cursor: "pointer" }}
+    <Page>
+      <PageHeader
+        title="Nutrição"
+        description={isToday ? `Hoje · ${selLabel}` : selLabel.charAt(0).toUpperCase() + selLabel.slice(1)}
+        actions={
+          <>
+            <Input
+              type="date"
+              aria-label="Escolher dia"
+              value={selectedDate}
+              max={todayIso()}
+              onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+              className="w-[150px] tabular"
+            />
+            {!isToday && (
+              <Button variant="ghost" onClick={() => setSelectedDate(todayIso())}>
+                Hoje
+              </Button>
+            )}
+            {isToday && (
+              <Button onClick={() => setShowManual(true)}>Registo manual</Button>
+            )}
+            <label
+              className={cn(
+                "inline-flex items-center gap-2 h-9 px-3.5 rounded-lg text-[13px] font-medium bg-accent text-white hover:bg-accent/90 cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-accent/40",
+                analyzing && "opacity-60 pointer-events-none"
+              )}
             >
-              ← HOJE
-            </button>
-          )}
-        </div>
-        <label
-          style={{ display: "flex", alignItems: "center", gap: 8, background: "#F54E00", border: "none", borderRadius: 4, padding: "9px 16px", color: "#0B0C10", font: "700 11px 'JetBrains Mono',monospace", cursor: analyzing ? "default" : "pointer", opacity: analyzing ? 0.6 : 1 }}
-        >
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            onChange={onPhoto}
-            disabled={analyzing}
-            style={{ display: "none" }}
-          />
-          {analyzing ? "A ANALISAR…" : "+ REGISTAR REFEIÇÃO"}
-        </label>
-      </div>
+              <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} disabled={analyzing} className="sr-only" />
+              <IconCamera className="w-4 h-4" />
+              {analyzing ? "A analisar…" : "Foto da refeição"}
+            </label>
+          </>
+        }
+      />
 
-      {photoResult && (
-        <div style={{ border: "1px solid rgba(245,78,0,0.3)", background: "rgba(245,78,0,0.06)", borderRadius: 8, padding: "12px 14px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-            <span style={{ font: "600 13px Inter,sans-serif" }}>{photoResult.label}</span>
-            <span style={{ font: "700 14px 'JetBrains Mono',monospace", color: "#F54E00" }}>{photoResult.kcal} kcal</span>
-          </div>
-          {(photoResult.protein_g != null || photoResult.carbs_g != null || photoResult.fat_g != null) && (
-            <div style={{ font: "500 10.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)", marginTop: 6 }}>
-              P {photoResult.protein_g ?? "—"}g · C {photoResult.carbs_g ?? "—"}g · G {photoResult.fat_g ?? "—"}g
-            </div>
-          )}
-        </div>
+      {error && <Card className="border-danger/30 px-4 py-3 text-[13px] text-danger">Não foi possível carregar: {error}</Card>}
+
+      {!isToday && (
+        <div className="text-[12.5px] text-fg-3 -mt-2">Passos e composição corporal mostram sempre os dados de hoje.</div>
       )}
 
-      {error && (
-        <div className="bg-red-500/10 text-red-400 border border-red-500/30 rounded px-4 py-2 font-mono text-[11.5px]">
-          {error}
-        </div>
-      )}
-
-      {selectedDate !== todayIso() && (
-        <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, padding: "10px 14px", font: "500 11.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.5)" }}>
-          A ver {new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-PT")} — Passos e Composição Corporal continuam a mostrar sempre hoje
-        </div>
-      )}
-
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-        <StatCard
-          title="PASSOS"
-          value={steps === undefined ? "…" : steps === null ? "—" : steps.toLocaleString("pt-PT")}
-          sub={steps ? "hoje" : "sem dados — liga o Google Health API"}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile label="Ingeridas" value={loading ? "—" : `${caloriesIn}`} hint={`kcal · ${mealCount} ${mealCount === 1 ? "refeição" : "refeições"}`} />
+        <StatTile
+          label="Gastas"
+          value={caloriesOut === 0 ? "—" : `${caloriesOut}`}
+          hint={bmr !== null ? `basal ${bmr} + passos ${stepsKcal} + treino ${treinoKcal}` : "define o perfil para o basal"}
         />
-        <StatCard
-          title="CALORIAS GASTAS"
-          value={caloriesOut === 0 ? "—" : String(caloriesOut)}
-          sub={
-            bmr !== null
-              ? `basal ${bmr} + passos ${stepsKcal} + treino ${treinoKcal}`
-              : "define o perfil para basal real"
-          }
-          color="#36CFC9"
-        />
-        <StatCard title="CALORIAS INGERIDAS" value={String(caloriesIn)} sub={`${mealCount} refeições`} color="#F54E00" />
-        <StatCard
-          title="DÉFICIT CALÓRICO"
+        <StatTile
+          label="Défice calórico"
           value={deficitPct === null ? "—" : `${deficitPct}%`}
-          sub={
+          tone={deficitTone}
+          hint={
             deficitPct === null
               ? mealCount === 0
                 ? "sem refeições registadas"
-                : "precisa de basal (não calculado)"
+                : "precisa do basal"
               : profile?.goal
               ? `meta ${GOAL_TARGET_PCT[profile.goal]}% · ${GOAL_LABEL[profile.goal]}`
-              : `${Math.abs(deficitKcal)} kcal · sem objetivo definido`
+              : `${Math.abs(deficitKcal)} kcal · sem objetivo`
           }
-          color={deficitPct === null ? undefined : goalOnTrack === null ? (isDeficit ? "#3DDC84" : "#FF5F5F") : goalOnTrack ? "#3DDC84" : "#E8B93F"}
-          border={
-            deficitPct === null
-              ? undefined
-              : goalOnTrack === null
-              ? isDeficit
-                ? "rgba(61,220,132,0.3)"
-                : "rgba(255,95,95,0.3)"
-              : goalOnTrack
-              ? "rgba(61,220,132,0.3)"
-              : "rgba(232,185,63,0.3)"
-          }
+        />
+        <StatTile
+          label="Passos"
+          value={steps === undefined ? "—" : steps === null ? "—" : steps.toLocaleString("pt-PT")}
+          tone={healthError ? "warning" : "default"}
+          hint={healthError ? "Google Health com erro" : steps ? `hoje · ~${stepsKcal} kcal` : "sem dados hoje"}
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:[grid-template-columns:1fr_1.2fr] gap-4">
-        <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.06em", color: "rgba(244,244,242,0.4)" }}>
-            COMPOSIÇÃO CORPORAL
-          </div>
-          <div style={{ display: "flex", gap: 16, alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: 150, height: 220, flexShrink: 0, position: "relative", background: "radial-gradient(ellipse at center, rgba(10,30,45,0.9), #060A10 72%)", borderRadius: 8, overflow: "hidden" }}>
-              <svg viewBox="0 0 100 220" style={{ width: "100%", height: "100%" }}>
-                <defs>
-                  <filter id="hologlow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="1.8" result="blur" />
-                    <feMerge><feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                  </filter>
-                  <linearGradient id="beamFade" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#36CFC9" stopOpacity={0} />
-                    <stop offset="15%" stopColor="#36CFC9" stopOpacity={0.5} />
-                    <stop offset="85%" stopColor="#36CFC9" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#36CFC9" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <line x1={15} y1={0} x2={15} y2={220} stroke="url(#beamFade)" strokeWidth={0.9} />
-                <line x1={32} y1={0} x2={32} y2={220} stroke="url(#beamFade)" strokeWidth={0.6} />
-                <line x1={50} y1={0} x2={50} y2={220} stroke="url(#beamFade)" strokeWidth={1.1} />
-                <line x1={68} y1={0} x2={68} y2={220} stroke="url(#beamFade)" strokeWidth={0.6} />
-                <line x1={85} y1={0} x2={85} y2={220} stroke="url(#beamFade)" strokeWidth={0.9} />
-                <g filter="url(#hologlow)">
-                  <circle cx={50} cy={15} r={12} fill="rgba(54,207,201,0.12)" stroke="#7FE3DE" strokeWidth={1.2} />
-                  <path d="M44,28 L29,36 L22,54 L19,84 L20,112 L17,123 L23,128 L27,118 L29,107 L31,82 L34,60 L36,80 L34,101 L29,131 L28,161 L27,187 L28,204 L35,204 L37,161 L40,118 L50,109 L60,118 L63,161 L65,204 L72,204 L73,187 L72,161 L71,131 L66,101 L64,80 L66,60 L69,82 L71,107 L73,118 L77,128 L83,123 L80,112 L81,84 L78,54 L71,36 L56,28 Z" fill="rgba(54,207,201,0.12)" stroke="#7FE3DE" strokeWidth={1} strokeLinejoin="round" />
-                  <path d="M36,80 L64,80 L66,101 L64,131 L36,131 L34,101 Z" fill="#F54E00" opacity={0.4} />
-                  <ellipse cx={27} cy={207} rx={6.5} ry={3.2} fill="rgba(54,207,201,0.18)" stroke="#7FE3DE" strokeWidth={0.9} />
-                  <ellipse cx={73} cy={207} rx={6.5} ry={3.2} fill="rgba(54,207,201,0.18)" stroke="#7FE3DE" strokeWidth={0.9} />
-                </g>
-                <ellipse cx={50} cy={30} rx={36} ry={4} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
-                <ellipse cx={50} cy={65} rx={34} ry={4} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
-                <ellipse cx={50} cy={100} rx={30} ry={4} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
-                <ellipse cx={50} cy={140} rx={26} ry={3.5} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
-                <ellipse cx={50} cy={180} rx={20} ry={3} fill="none" stroke="#7FE3DE" strokeWidth={0.9} opacity={0.55} />
-              </svg>
-            </div>
-          </div>
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
-            <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
-              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>PESO</div>
-              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#F4F4F2" }}>{body?.weight_kg != null ? `${body.weight_kg} kg` : "—"}</div>
-              {body?.date && (
-                <div style={{ font: "500 9.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.3)", marginTop: 2 }}>
-                  {new Date(body.date + "T12:00:00").toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" })}
-                </div>
-              )}
-            </div>
-            <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
-              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>IMC</div>
-              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#E8B93F" }}>{bmi ?? "—"}</div>
-            </div>
-            <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
-              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>GORDURA CORPORAL</div>
-              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#36CFC9" }}>{body?.body_fat_pct != null ? `${body.body_fat_pct}%` : "—"}</div>
-            </div>
-            <div style={{ background: "#0B0C10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "10px 12px" }}>
-              <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>MASSA MAGRA</div>
-              <div style={{ font: "700 18px 'JetBrains Mono',monospace", marginTop: 4, color: "#8B7CF6" }}>{body?.lean_mass_kg != null ? `${body.lean_mass_kg} kg` : "—"}</div>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowBodyForm((s) => !s)}
-            className="font-mono font-semibold text-[10px] text-white/40 hover:text-accent transition-colors text-left"
-          >
-            {showBodyForm ? "fechar" : "+ registar medição de hoje (peso, gordura, massa magra)"}
-          </button>
-          {showBodyForm && (
-            <form onSubmit={saveBody} className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <input value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="peso kg" type="number" step="0.1"
-                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
-                <input value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} placeholder="gordura %" type="number" step="0.1"
-                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
-                <input value={leanMass} onChange={(e) => setLeanMass(e.target.value)} placeholder="magra kg" type="number" step="0.1"
-                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr] gap-4 items-start">
+        <Card>
+          <CardHeader
+            title="Corpo"
+            description={body?.date ? `Última medição a ${new Date(body.date + "T12:00:00").toLocaleDateString("pt-PT", { day: "numeric", month: "short" })}` : "Sem medições registadas"}
+            actions={
+              <Button size="sm" variant="ghost" onClick={() => setShowProfileForm(true)}>
+                Perfil
+              </Button>
+            }
+          />
+          <div className="px-5 pb-5 flex flex-col gap-3">
+            {bodyHistory === null ? (
+              <Skeleton className="h-[140px]" />
+            ) : (
+              <div className="grid grid-cols-2 gap-2.5">
+                <BodyMetric label="Peso" value={body?.weight_kg != null ? `${body.weight_kg} kg` : "—"} />
+                <BodyMetric label="IMC" value={bmi ?? "—"} hint={profile?.height_cm ? undefined : "precisa da altura"} />
+                <BodyMetric label="Gordura corporal" value={body?.body_fat_pct != null ? `${body.body_fat_pct}%` : "—"} />
+                <BodyMetric label="Massa magra" value={body?.lean_mass_kg != null ? `${body.lean_mass_kg} kg` : "—"} />
               </div>
-              <button type="submit" disabled={savingBody} className="px-3 py-1.5 bg-accent border-none rounded text-bg font-mono font-bold text-[10px] disabled:opacity-50">
-                {savingBody ? "…" : "GRAVAR"}
-              </button>
-            </form>
-          )}
-          <button
-            onClick={() => setShowProfileForm((s) => !s)}
-            className="font-mono font-semibold text-[10px] text-white/40 hover:text-accent transition-colors text-left"
-          >
-            {showProfileForm ? "fechar" : profile?.height_cm ? "editar perfil (altura/idade)" : "+ definir perfil (para basal real)"}
-          </button>
-          {showProfileForm && (
-            <form onSubmit={saveProfile} className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <input value={heightInput} onChange={(e) => setHeightInput(e.target.value)} placeholder="altura cm" type="number"
-                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
-                <input value={ageInput} onChange={(e) => setAgeInput(e.target.value)} placeholder="idade" type="number"
-                  className="flex-1 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
-                <select value={sexInput} onChange={(e) => setSexInput(e.target.value as "m" | "f")}
-                  className="bg-bg border border-white/10 rounded px-2 py-1.5 text-[12px] outline-none">
-                  <option value="m">M</option>
-                  <option value="f">F</option>
-                </select>
-              </div>
-              <select value={goalInput} onChange={(e) => setGoalInput(e.target.value as "perder" | "manter" | "ganhar")}
-                className="bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] outline-none">
-                <option value="perder">Objetivo: Perder peso</option>
-                <option value="manter">Objetivo: Manter</option>
-                <option value="ganhar">Objetivo: Ganhar massa</option>
-              </select>
-              <button type="submit" disabled={savingProfile} className="px-3 py-1.5 bg-accent border-none rounded text-bg font-mono font-bold text-[10px] disabled:opacity-50">
-                {savingProfile ? "…" : "GRAVAR PERFIL"}
-              </button>
-            </form>
-          )}
-        </div>
+            )}
+            {profile && !profile.height_cm && (
+              <div className="text-[12px] text-fg-3">Define altura, idade e objetivo no perfil para calcular o basal e o défice real.</div>
+            )}
+            <Button onClick={() => setShowBodyForm(true)} className="justify-center">
+              Registar medição de hoje
+            </Button>
+          </div>
+        </Card>
 
-        <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: 20 }}>
-          <div style={{ font: "600 11px 'JetBrains Mono',monospace", letterSpacing: "0.06em", color: "rgba(244,244,242,0.4)", marginBottom: 10 }}>
-            INGERIDAS VS GASTAS · 7 DIAS
-          </div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 150, overflowX: "auto" }}>
-            {days.map((d, i) => (
-              <div key={i} style={{ flex: "1 0 32px", minWidth: 32, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", gap: 4, height: "100%" }}>
-                <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 2, width: "100%", justifyContent: "center" }}>
-                  <div style={{ width: 8, borderRadius: "2px 2px 0 0", background: "#F54E00", height: Math.max(4, (d.in / maxCal) * 120) }} />
-                  <div style={{ width: 8, borderRadius: "2px 2px 0 0", background: "#36CFC9", height: Math.max(4, (d.out / maxCal) * 120) }} />
+        <Card>
+          <CardHeader title="Ingeridas vs gastas" description="Últimos 7 dias, em kcal" />
+          <div className="px-5 pb-5">
+            <div className="flex items-end gap-2 h-[150px]" role="img" aria-label="Calorias ingeridas e gastas nos últimos 7 dias">
+              {days.map((d, i) => (
+                <div key={i} className="flex-1 min-w-0 flex flex-col items-center justify-end gap-1.5 h-full group">
+                  <div className="flex-1 w-full flex items-end justify-center gap-[3px]">
+                    <div
+                      className="w-[10px] rounded-t-[3px]"
+                      style={{ background: IN_COLOR, height: Math.max(3, (d.in / maxCal) * 120) }}
+                      title={`Ingeridas ${d.in} kcal`}
+                    />
+                    <div
+                      className="w-[10px] rounded-t-[3px]"
+                      style={{ background: OUT_COLOR, height: Math.max(3, (d.out / maxCal) * 120) }}
+                      title={`Gastas (treino) ${d.out} kcal`}
+                    />
+                  </div>
+                  <span className={cn("text-[11px] capitalize", i === days.length - 1 ? "text-fg font-medium" : "text-fg-3")}>{d.label}</span>
                 </div>
-                <span style={{ font: "600 9px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>{d.label}</span>
+              ))}
+            </div>
+            <div className="flex gap-4 mt-3 text-[12px] text-fg-2">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-[3px]" style={{ background: IN_COLOR }} />
+                Ingeridas
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-[3px]" style={{ background: OUT_COLOR }} />
+                Gastas em treino
+              </span>
+            </div>
+            {hasMacroData && (
+              <div className="grid grid-cols-3 gap-2.5 mt-4 pt-4 border-t border-line/[0.06]">
+                <BodyMetric label="Proteína" value={`${Math.round(totalProtein)} g`} />
+                <BodyMetric label="Hidratos" value={`${Math.round(totalCarbs)} g`} />
+                <BodyMetric label="Gordura" value={`${Math.round(totalFat)} g`} />
               </div>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardHeader
+          title={isToday ? "Registos de hoje" : "Registos do dia"}
+          description="Refeições e treinos"
+          actions={<span className="text-[12px] text-fg-3 tabular">{logs ? `${logs.length}` : ""}</span>}
+          className="border-b border-line/[0.06]"
+        />
+        {logs === null && !error ? (
+          <div className="p-5 flex flex-col gap-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-5" />
             ))}
           </div>
-          <div style={{ display: "flex", gap: 16, marginTop: 12, font: "500 11px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.5)" }}>
-            <span><span style={{ display: "inline-block", width: 8, height: 8, background: "#F54E00", borderRadius: 1, marginRight: 6 }} />Ingeridas</span>
-            <span><span style={{ display: "inline-block", width: 8, height: 8, background: "#36CFC9", borderRadius: 1, marginRight: 6 }} />Gastas</span>
-          </div>
-        </div>
-      </div>
-
-      {hasMacroData && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-          <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: "14px 16px" }}>
-            <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>PROTEÍNA</div>
-            <div style={{ font: "700 20px 'JetBrains Mono',monospace", marginTop: 4, color: "#EF5DA8" }}>{Math.round(totalProtein)}g</div>
-          </div>
-          <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: "14px 16px" }}>
-            <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>CARBOIDRATOS</div>
-            <div style={{ font: "700 20px 'JetBrains Mono',monospace", marginTop: 4, color: "#4F8FF7" }}>{Math.round(totalCarbs)}g</div>
-          </div>
-          <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, padding: "14px 16px" }}>
-            <div style={{ font: "600 10px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>GORDURA</div>
-            <div style={{ font: "700 20px 'JetBrains Mono',monospace", marginTop: 4, color: "#E8B93F" }}>{Math.round(totalFat)}g</div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, overflow: "hidden" }}>
-        <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)", font: "700 13px Inter,sans-serif" }}>
-          {selectedDate === todayIso() ? "Refeições e treinos de hoje" : `Refeições e treinos — ${new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" })}`}
-        </div>
-        {(!logs || logs.length === 0) && (
-          <div className="px-[18px] py-4 text-[12.5px] text-white/35 font-sans">nada registado ainda</div>
+        ) : !logs || logs.length === 0 ? (
+          <EmptyState
+            icon={<IconNutricao className="w-5 h-5" />}
+            title="Nada registado"
+            description={isToday ? "Tira uma foto ao prato ou regista manualmente uma refeição ou treino." : "Não há registos neste dia."}
+            action={
+              isToday && (
+                <Button size="sm" onClick={() => setShowManual(true)}>
+                  Registo manual
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <ul>
+            {logs.map((l) => {
+              const hasMacros = l.protein_g !== null || l.carbs_g !== null || l.fat_g !== null;
+              return (
+                <li key={l.id} className="flex items-center gap-3 px-5 py-3 border-b border-line/[0.05] last:border-b-0 hover:bg-line/[0.025]">
+                  <span className="w-11 flex-none text-[12.5px] tabular text-fg-3">
+                    {new Date(l.created_at).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] truncate">{l.label}</div>
+                    {hasMacros && (
+                      <div className="text-[11.5px] text-fg-3 tabular mt-0.5">
+                        P {l.protein_g ?? "—"}g · H {l.carbs_g ?? "—"}g · G {l.fat_g ?? "—"}g
+                      </div>
+                    )}
+                  </div>
+                  <Badge tone={SOURCE_TONE[l.source] || "neutral"} className="hidden sm:inline-flex capitalize">
+                    {l.source}
+                  </Badge>
+                  <span className={cn("w-[84px] flex-none text-right text-[13px] font-medium tabular", l.type === "in" ? "text-fg" : "text-info")}>
+                    {l.type === "in" ? "+" : "−"}
+                    {l.kcal} kcal
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         )}
-        {logs?.map((l) => {
-          const c = SOURCE_COLORS[l.source] || "rgba(244,244,242,0.4)";
-          const hasMacros = l.protein_g !== null || l.carbs_g !== null || l.fat_g !== null;
-          return (
-            <div key={l.id} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "13px 18px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ font: "600 10px 'JetBrains Mono',monospace", letterSpacing: "0.03em", padding: "3px 8px", borderRadius: 3, flexShrink: 0, color: c, background: `${c}1a`, border: `1px solid ${c}40` }}>
-                  {l.source.charAt(0).toUpperCase() + l.source.slice(1)}
-                </span>
-                <span style={{ flex: 1, font: "500 13px Inter,sans-serif" }}>{l.label}</span>
-                <span style={{ font: "500 11px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.4)" }}>
-                  {new Date(l.created_at).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
-                </span>
-                <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: l.type === "in" ? "#F54E00" : "#36CFC9", width: 80, textAlign: "right" }}>
-                  {l.type === "in" ? "+" : "−"}{l.kcal} kcal
-                </span>
-              </div>
-              {hasMacros && (
-                <div style={{ font: "500 10.5px 'JetBrains Mono',monospace", color: "rgba(244,244,242,0.35)", paddingLeft: 2 }}>
-                  P {l.protein_g ?? "—"}g · C {l.carbs_g ?? "—"}g · G {l.fat_g ?? "—"}g
-                </div>
-              )}
+      </Card>
+
+      <Modal
+        open={showManual}
+        onClose={() => !saving && setShowManual(false)}
+        title="Registo manual"
+        description="Uma refeição (calorias ingeridas) ou um treino (calorias gastas), hoje."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowManual(false)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button variant="primary" type="submit" form="manual-form" loading={saving} disabled={!label.trim() || !kcal}>
+              Registar
+            </Button>
+          </>
+        }
+      >
+        <form id="manual-form" onSubmit={addManual} className="flex flex-col gap-4">
+          <Segmented<"in" | "out">
+            value={type}
+            onChange={setType}
+            options={[
+              { value: "in", label: "Refeição" },
+              { value: "out", label: "Treino" },
+            ]}
+          />
+          <div>
+            <Label>{type === "in" ? "O que comeste" : "Treino"}</Label>
+            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={type === "in" ? "Ex: frango com arroz" : "Ex: corrida 5 km"} />
+          </div>
+          <div>
+            <Label>Calorias</Label>
+            <Input value={kcal} onChange={(e) => setKcal(e.target.value)} placeholder="kcal" type="number" min="0" step="1" inputMode="numeric" />
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={showBodyForm}
+        onClose={() => !savingBody && setShowBodyForm(false)}
+        title="Medição de hoje"
+        description="Preenche só o que mediste."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowBodyForm(false)} disabled={savingBody}>
+              Cancelar
+            </Button>
+            <Button variant="primary" type="submit" form="body-form" loading={savingBody} disabled={!weight && !bodyFat && !leanMass}>
+              Gravar
+            </Button>
+          </>
+        }
+      >
+        <form id="body-form" onSubmit={saveBody} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <Label>Peso (kg)</Label>
+            <Input value={weight} onChange={(e) => setWeight(e.target.value)} type="number" step="0.1" inputMode="decimal" />
+          </div>
+          <div>
+            <Label>Gordura (%)</Label>
+            <Input value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} type="number" step="0.1" inputMode="decimal" />
+          </div>
+          <div>
+            <Label>Massa magra (kg)</Label>
+            <Input value={leanMass} onChange={(e) => setLeanMass(e.target.value)} type="number" step="0.1" inputMode="decimal" />
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={showProfileForm}
+        onClose={() => !savingProfile && setShowProfileForm(false)}
+        title="Perfil"
+        description="Usado para o metabolismo basal, o IMC e a meta de défice."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowProfileForm(false)} disabled={savingProfile}>
+              Cancelar
+            </Button>
+            <Button variant="primary" type="submit" form="profile-form" loading={savingProfile} disabled={!heightInput || !ageInput}>
+              Guardar
+            </Button>
+          </>
+        }
+      >
+        <form id="profile-form" onSubmit={saveProfile} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Altura (cm)</Label>
+              <Input value={heightInput} onChange={(e) => setHeightInput(e.target.value)} type="number" inputMode="numeric" />
             </div>
-          );
-        })}
-        {selectedDate === todayIso() && (
-          <form onSubmit={addManual} className="flex flex-wrap gap-2 px-[18px] py-3">
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as "in" | "out")}
-              className="bg-bg border border-white/10 rounded px-2 py-1.5 text-[12px] font-mono outline-none focus:border-accent"
-            >
-              <option value="in">refeição</option>
-              <option value="out">treino</option>
-            </select>
-            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={type === "in" ? "o que comeste" : "treino"}
-              className="flex-[2_1_140px] min-w-0 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
-            <input value={kcal} onChange={(e) => setKcal(e.target.value)} placeholder="kcal" type="number" min="0" step="1"
-              className="flex-[1_1_70px] min-w-0 bg-bg border border-white/10 rounded px-2.5 py-1.5 text-[12px] font-mono outline-none focus:border-accent" />
-            <button type="submit" disabled={saving || !label.trim() || !kcal} className="px-3 py-1.5 bg-accent border-none rounded text-bg font-mono font-bold text-[10px] disabled:opacity-50">
-              {saving ? "…" : "+ MANUAL"}
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
+            <div>
+              <Label>Idade</Label>
+              <Input value={ageInput} onChange={(e) => setAgeInput(e.target.value)} type="number" inputMode="numeric" />
+            </div>
+          </div>
+          <div>
+            <Label>Sexo</Label>
+            <Segmented<"m" | "f">
+              value={sexInput}
+              onChange={setSexInput}
+              options={[
+                { value: "m", label: "Masculino" },
+                { value: "f", label: "Feminino" },
+              ]}
+            />
+          </div>
+          <div>
+            <Label>Objetivo</Label>
+            <Select value={goalInput} onChange={(e) => setGoalInput(e.target.value as "perder" | "manter" | "ganhar")}>
+              <option value="perder">Perder peso</option>
+              <option value="manter">Manter</option>
+              <option value="ganhar">Ganhar massa</option>
+            </Select>
+          </div>
+        </form>
+      </Modal>
+    </Page>
   );
 }

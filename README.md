@@ -14,6 +14,17 @@ classificação por pilares, e Gemini para analisar fotos de refeições.
 - `/automacoes` — agenda semanal do que o Holiday faz sozinho (lembretes, análises, trabalho), com filtros
 - `/login` — palavra-passe única (`APP_PASSWORD`)
 
+## Interface
+- **Tokens** em `app/globals.css` (variáveis `--bg`, `--surface*`, `--fg*`, `--accent`, estados) mapeados no
+  `tailwind.config.ts` (`bg-surface`, `text-fg-2`, `border-line/10`…). Nada de hex soltos nas páginas; as cores
+  dos pilares vêm só de `PILLARS` (`lib/types.ts`).
+- **Kit** em `components/ui/`: `Button`, `Card`, `Badge`/`StatusDot`, `Input`/`Select`/`Segmented`, `Modal`
+  (Esc, foco, folha de baixo no telemóvel), `Page`/`PageHeader`/`EmptyState`/`Skeleton` e `useToast`
+  (feedback de ações em vez de banners soltos).
+- **Navegação**: barra lateral agrupada no computador; no telemóvel, barra inferior com as 4 páginas principais
+  + "Mais".
+- Regra única para "hoje / atrasada / sem data" em `lib/task-bucket.ts`, usada pelo dashboard e pelo Holiday.
+
 ## Arquitetura e segurança
 - O **browser nunca fala com o Supabase**. Todas as leituras e escritas passam
   pelas rotas `/api/*`, que usam a service role no servidor.
