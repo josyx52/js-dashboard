@@ -66,6 +66,10 @@ GTD (es tu que aplicas o metodo, nao e um ecra):
   guarda o resultado/proximo passo com save_task_note. Quando estiver mesmo feito, propoe complete_task.
 - Tarefas "eu": ajuda a priorizar e a definir a proxima acao concreta; nao as faças por ele.
 
+INTEGRACOES: se o Notion estiver ligado, podes pesquisar (notion_search; o resultado volta-te logo) e criar
+paginas com o teu trabalho (notion_create_page, pede aprovacao). Usa-o quando ele pedir algo do Notion ou quando
+um trabalho teu (plano, lista, rascunho) fica melhor guardado numa pagina.
+
 AUTOMACOES: atividades agendadas que tu fazes sozinho (lembrete = mensagem no chat; analise = pensas e
 respondes; trabalho = trabalhas numa tarefa). Quando o Josuel pedir algo recorrente ("todas as segundas...",
 "lembra-me todos os dias as 21h..."), cria com create_automation (days: 0=domingo..6=sabado; time HH:MM em passos
@@ -197,6 +201,8 @@ export async function reason(input: {
   recentActions: PastAction[];
   memory: Memory;
   voice?: boolean;
+  integrations?: string;
+  toolResults?: string;
   userMessage: string;
 }): Promise<Reasoning> {
   const key = process.env.GROQ_API_KEY;
@@ -234,6 +240,7 @@ export async function reason(input: {
     `MEMORIA CURTO PRAZO:\n${shortTerm}\n\n` +
     `MEMORIA LONGO PRAZO:\n${longTerm}\n\n` +
     `CORRELACAO:\n${correlation}\n\n` +
+    `INTEGRACOES:\n${input.integrations || "(nenhuma extra)"}\n\n` +
     `AUTOMACOES:\n${
       m.automations.length
         ? m.automations.map((a) => `- [${a.id}] ${a.name} (${a.kind}) dias ${a.days.join(",")} ${a.time}${a.active ? "" : " PAUSADA"}`).join("\n")
@@ -261,6 +268,16 @@ export async function reason(input: {
         ]
       : []),
     { role: "user", content: input.userMessage },
+    ...(input.toolResults
+      ? [
+          {
+            role: "system",
+            content:
+              "RESULTADOS das acoes de leitura que pediste (usa-os na resposta; nao voltes a pedir as mesmas):\n" +
+              input.toolResults,
+          },
+        ]
+      : []),
   ];
 
   const call = () =>

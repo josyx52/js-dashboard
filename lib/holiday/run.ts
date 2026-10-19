@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSnapshot } from "./snapshot";
 import { detectSignals, groupProblems, type Problem } from "./engines";
 import { reason, type HistoryItem, type PastAction } from "./reasoning";
-import { ACTIONS, actionKey, executeAction, validateProposal, type ActionType } from "./actions";
+import { ACTIONS, READ_ACTIONS, actionKey, executeAction, validateProposal, type ActionType } from "./actions";
+import { notionToken } from "@/lib/connectors";
 import { loadMemory, recordDaily } from "./memory";
 import { analyzeMealPhoto, insertPhotoMeal } from "@/lib/nutrition";
 import { KIND_LABEL, type Automation } from "./automations";
@@ -110,7 +111,20 @@ export async function think(
     userMessage = (data as HolidayMessage) || undefined;
   }
 
-  const r = await reason({
+  const notion = await notionToken(sb).catch(() => ({ token: null, integrationId: null, config: {} as any }));
+  const { data: notionRow } = notion.integrationId
+    ? await sb.from("integrations").select("connected").eq("id", notion.integrationId).maybeSingle()
+    : { data: null };
+  const notionCtx = {
+    connected: !!notion.token && !!notionRow?.connected,
+    parentId: notion.config?.parent_id || null,
+    parentTitle: notion.config?.parent_title || null,
+  };
+  const integrationsText = notionCtx.connected
+    ? `Notion ligado${notionCtx.parentTitle ? ` — paginas novas vao para “${notionCtx.parentTitle}”` : " — sem pagina de destino definida (so pesquisa, ou usa parent_id de um resultado)"}`
+    : "Notion nao ligado";
+
+  const reasonInput = {
     snapshot,
     problems,
     history,
@@ -124,7 +138,30 @@ export async function think(
         ? `AUTOMACAO AGENDADA (${KIND_LABEL[opts.automation.kind]}) "${opts.automation.name}": ${opts.automation.prompt}\n` +
           "Faz isto agora e deixa no chat o resultado para o Josuel ler, curto. Se for trabalho numa tarefa, guarda-o com save_task_note."
         : BRIEFING_PROMPT,
-  });
+    integrations: integrationsText,
+  };
+  let r = await reason(reasonInput);
+
+  // Ciclo de ferramentas (1 volta): acoes so de leitura correm ja e o
+  // resultado volta ao raciocinio, para a resposta final ja as usar.
+  const readCtx = { notion: notionCtx };
+  const reads = r.actions
+    .filter((p) => READ_ACTIONS.includes(p.type as ActionType))
+    .map((p) => validateProposal(p, snapshot, readCtx))
+    .filter((v) => v.ok)
+    .slice(0, 2) as { ok: true; type: ActionType; params: Record<string, any>; summary: string }[];
+  const readLog: { summary: string; ok: boolean; result: string; type: ActionType; params: Record<string, any> }[] = [];
+  if (reads.length) {
+    for (const v of reads) {
+      const exec = await executeAction(sb, v.type, v.params, snapshot.today);
+      readLog.push({ summary: v.summary, ok: exec.ok, result: exec.result, type: v.type, params: v.params });
+    }
+    r = await reason({
+      ...reasonInput,
+      toolResults: readLog.map((x) => `${x.summary}:\n${x.result}`).join("\n\n"),
+    });
+  }
+  r = { ...r, actions: r.actions.filter((p) => !READ_ACTIONS.includes(p.type as ActionType)) };
 
   const { data: msg, error: msgErr } = await sb
     .from("holiday_messages")
@@ -170,7 +207,27 @@ export async function think(
     memoryIds: new Set(memory.longTerm.map((x) => x.id)),
     memoryContents: memory.longTerm.map((x) => x.content),
     automations: memory.automations.map((x) => ({ id: x.id, name: x.name })),
+    notion: notionCtx,
   };
+
+  // Regista as leituras feitas (pesquisas no Notion) como acoes executadas.
+  for (const x of readLog) {
+    const { data: row } = await sb
+      .from("holiday_actions")
+      .insert({
+        message_id: msg.id,
+        type: x.type,
+        params: x.params,
+        risk: "low",
+        status: x.ok ? "executed" : "failed",
+        summary: x.summary,
+        result: x.result.slice(0, 1000),
+        decided_at: new Date().toISOString(),
+      })
+      .select(SELECT_ACTION)
+      .single();
+    if (row) actions.push(row as HolidayAction);
+  }
 
   for (const p of r.actions) {
     const v = validateProposal(p, snapshot, ctx);

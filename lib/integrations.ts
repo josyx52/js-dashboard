@@ -10,7 +10,7 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "automacoes-1";
+export const DEPLOY_MARKER = "integracoes-1";
 
 
 // Resultado de uma leitura a um provedor. `ok: false` quando o token falta
@@ -171,7 +171,7 @@ export async function completeTickTickTask(
   return { ok: true };
 }
 
-async function googleAccessToken(): Promise<string | null> {
+export async function googleAccessToken(): Promise<string | null> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
@@ -191,7 +191,7 @@ async function googleAccessToken(): Promise<string | null> {
   return j.access_token || null;
 }
 
-async function googleHealthAccessToken(): Promise<{ token: string | null; error?: string }> {
+export async function googleHealthAccessToken(): Promise<{ token: string | null; error?: string }> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_HEALTH_REFRESH_TOKEN;

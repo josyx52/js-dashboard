@@ -7,7 +7,8 @@ classificação por pilares, e Gemini para analisar fotos de refeições.
 ## Páginas
 - `/dashboard` — 6 pilares, tarefas atrasadas / para hoje / sem data (Todoist + TickTick), sync
 - `/nutricao` — refeições (foto ou manual), treinos, passos, défice calórico, peso/IMC, perfil
-- `/integracoes` — integrações (chaves guardadas no Supabase Vault) + laboratório de tools
+- `/integracoes` — estado ao vivo de cada serviço (Todoist, TickTick, Google, Groq, Gemini, ElevenLabs, Notion),
+  configuração do Notion e chaves guardadas no Supabase Vault
 - `/agendar` — eventos no Google Calendar com lembrete
 - `/agente` — **Holiday**: agente com chat por texto ou voz, fotos de refeições e GTD
 - `/automacoes` — agenda semanal do que o Holiday faz sozinho (lembretes, análises, trabalho), com filtros
@@ -56,6 +57,10 @@ Holiday interrompe-o. No modo voz as respostas são curtas e naturais (1–3 fra
 - Falar (`/api/holiday/speak`, streaming): ElevenLabs (voz feminina; `eleven_flash_v2_5` na conversa para
   menos latência) → se falhar ou sem chave, voz feminina pt do browser.
 
+**Notion** (`lib/connectors.ts`): com a integração “Notion” ligada, o Holiday pesquisa (`notion_search`, só leitura —
+o resultado volta ao raciocínio na mesma resposta) e cria páginas com o seu trabalho (`notion_create_page`, com
+aprovação) na página de destino escolhida em Integrações.
+
 **Automações** (`lib/holiday/automations.ts`, `holiday_automations`): atividades agendadas por dias da semana e hora
 (Lisboa, passos de 15 min). *Lembrete* publica a mensagem no chat; *análise* e *trabalho* correm o ciclo completo do
 Holiday. Criadas na página `/automacoes` ou pelo próprio Holiday no chat (`create_automation`/`set_automation`).
@@ -92,7 +97,7 @@ Migrações em `supabase/migrations/`, aplicadas por ordem no SQL Editor do Supa
 - `0009` — `daily_steps`, `sync_state`, remove a coluna legada `api_key_encrypted`,
   e não deixa criar integrações com nomes repetidos.
 - `0011` — coluna `recurring` em `tasks_cache`; `0012` — tabelas do Holiday; `0013` — memória, histórico
-  diário e campos GTD; `0014` — automações.
+  diário e campos GTD; `0014` — automações; `0015` — configuração por integração.
 - `0010` — fecha o RLS (policies só para `service_role`). Já aplicada; a versão
   antiga lia a BD diretamente no browser e deixa de funcionar.
 

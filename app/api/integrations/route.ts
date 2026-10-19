@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const { data, error } = await supabaseServer()
       .from("integrations")
-      .select("id, name, description, connected, capabilities, created_at")
+      .select("id, name, description, connected, capabilities, created_at, config")
       .order("created_at", { ascending: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, integrations: data || [] });

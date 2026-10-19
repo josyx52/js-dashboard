@@ -3,6 +3,7 @@ import { completeTask } from "@/lib/tasks";
 import { addCalendarEvent, createTodoistTask, rescheduleTodoistTask } from "@/lib/integrations";
 import type { Snapshot } from "./snapshot";
 import { normalizeDays, normalizeTime } from "./automations";
+import { notionCreatePage, notionSearch, notionToken } from "@/lib/connectors";
 
 // Etapa 5 do ciclo (SolutionEngine do Jarvis): catalogo fechado de acoes.
 // Risco "low" executa logo; risco "high" (mexe em Todoist/TickTick/Calendar)
@@ -21,7 +22,9 @@ export type ActionType =
   | "set_owner"
   | "save_task_note"
   | "create_automation"
-  | "set_automation";
+  | "set_automation"
+  | "notion_search"
+  | "notion_create_page";
 
 export interface ActionSpec {
   risk: "low" | "high";
@@ -55,12 +58,22 @@ export const ACTIONS: Record<ActionType, ActionSpec> = {
     params: '{"name": string curta, "kind": "lembrete"|"analise"|"trabalho", "prompt": string (mensagem ou o que fazer), "days": [0-6], "time": "HH:MM"}',
   },
   set_automation: { risk: "low", params: '{"automation_id": string, "active": boolean}' },
+  // Notion: pesquisar e so leitura (o resultado volta ao teu raciocinio); criar pede aprovacao.
+  notion_search: { risk: "low", params: '{"query": string}' },
+  notion_create_page: {
+    risk: "high",
+    params: '{"title": string, "content": string (texto; linhas "- " viram lista, "# " titulo), "parent_id"?: id de uma pagina dos resultados}',
+  },
 };
+
+// Acoes so de leitura: correm durante o raciocinio e o resultado volta ao modelo.
+export const READ_ACTIONS: ActionType[] = ["notion_search"];
 
 export interface ValidationContext {
   memoryIds?: Set<string>;
   memoryContents?: string[];
   automations?: { id: string; name: string }[];
+  notion?: { connected: boolean; parentId: string | null; parentTitle: string | null };
 }
 
 export interface Proposal {
@@ -206,6 +219,21 @@ export function validateProposal(
       const active = !!a.active;
       return { ok: true, type, params: { automation_id: auto.id, active }, summary: `${active ? "Retomar" : "Pausar"} automação: ${auto.name}` };
     }
+    case "notion_search": {
+      if (!ctx.notion?.connected) return { ok: false, error: "Notion nao esta ligado" };
+      const query = String(a.query || "").trim().slice(0, 100);
+      return { ok: true, type, params: { query }, summary: `Pesquisar no Notion: ${query || "(recentes)"}` };
+    }
+    case "notion_create_page": {
+      if (!ctx.notion?.connected) return { ok: false, error: "Notion nao esta ligado" };
+      const title = String(a.title || "").trim().slice(0, 200);
+      const content = String(a.content || "").trim().slice(0, 8000);
+      const parent = String(a.parent_id || ctx.notion.parentId || "").replace(/-/g, "");
+      if (!title || !content) return { ok: false, error: "pagina sem titulo/conteudo" };
+      if (!/^[0-9a-f]{32}$/i.test(parent)) return { ok: false, error: "sem pagina de destino no Notion (define em Integracoes)" };
+      const where = a.parent_id ? "" : ctx.notion.parentTitle ? ` em “${ctx.notion.parentTitle}”` : "";
+      return { ok: true, type, params: { title, content, parent_id: parent }, summary: `Criar página no Notion${where}: ${title}` };
+    }
     case "save_task_note": {
       const t = task(a.task_id);
       if (!t) return { ok: false, error: `tarefa ${a.task_id} nao existe no snapshot` };
@@ -288,6 +316,31 @@ export async function executeAction(
         .update({ gtd_owner: params.owner, gtd_list: params.list })
         .eq("id", params.task_id);
       return error ? { ok: false, result: error.message } : { ok: true, result: "atualizado" };
+    }
+    case "notion_search": {
+      const { token } = await notionToken(sb);
+      if (!token) return { ok: false, result: "Notion não está ligado" };
+      try {
+        const res = await notionSearch(token, params.query, 6);
+        return {
+          ok: true,
+          result: res.length
+            ? res.map((r: any) => `${r.title} [${r.type} ${r.id.replace(/-/g, "")}] ${r.url}`).join("\n")
+            : "nenhum resultado",
+        };
+      } catch (e: any) {
+        return { ok: false, result: e?.message || String(e) };
+      }
+    }
+    case "notion_create_page": {
+      const { token } = await notionToken(sb);
+      if (!token) return { ok: false, result: "Notion não está ligado" };
+      try {
+        const page = await notionCreatePage(token, params.parent_id, params.title, params.content);
+        return { ok: true, result: `página criada: ${page.url}` };
+      } catch (e: any) {
+        return { ok: false, result: e?.message || String(e) };
+      }
     }
     case "create_automation": {
       const { error } = await sb.from("holiday_automations").insert({ ...params, created_by: "holiday" });
