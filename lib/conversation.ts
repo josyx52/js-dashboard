@@ -50,6 +50,7 @@ export class Conversation {
   private idleMs = 0;
   private bargeMs = 0;
   private generation = 0; // invalida respostas de frases interrompidas
+  private muted = false;
 
   constructor(private h: ConversationHandlers) {}
 
@@ -83,6 +84,21 @@ export class Conversation {
     this.floor = 0.01;
     this.listen();
     this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  // Silenciar: o microfone deixa de ser ouvido (o Holiday pode acabar de
+  // falar), sem fechar a conversa. A frase que estava a ser dita e descartada.
+  setMuted(m: boolean) {
+    this.muted = m;
+    if (this.stream) this.stream.getAudioTracks().forEach((t) => (t.enabled = !m));
+    if (m && (this.state === "listening" || this.state === "hearing")) {
+      this.generation++;
+      this.listen();
+    }
+  }
+
+  isMuted() {
+    return this.muted;
   }
 
   stop() {
@@ -137,6 +153,7 @@ export class Conversation {
   }
 
   private tick() {
+    if (this.muted) return;
     const level = this.rms();
 
     if (this.calibrating > 0) {

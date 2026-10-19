@@ -22,7 +22,17 @@ export interface ShortTerm {
   todayActions: { summary: string | null; status: string; result: string | null }[];
 }
 
+export interface AutomationBrief {
+  id: string;
+  name: string;
+  kind: string;
+  days: number[];
+  time: string;
+  active: boolean;
+}
+
 export interface Memory {
+  automations: AutomationBrief[];
   longTerm: LongTermMemory[];
   shortTerm: ShortTerm;
   correlation: Correlation;
@@ -65,7 +75,7 @@ export async function loadMemory(sb: SupabaseClient, s: Snapshot, signals: Signa
   const since30 = new Date(new Date(s.today + "T12:00:00Z").getTime() - 30 * 86400000).toISOString().slice(0, 10);
   const dayStart = localDayStartIso(s);
 
-  const [mem, daily, lastMsg, todayActs] = await Promise.all([
+  const [mem, daily, lastMsg, todayActs, autos] = await Promise.all([
     sb
       .from("holiday_memories")
       .select("id, kind, area, content, importance")
@@ -82,6 +92,7 @@ export async function loadMemory(sb: SupabaseClient, s: Snapshot, signals: Signa
       .limit(1)
       .maybeSingle(),
     sb.from("holiday_actions").select("summary, status, result").gte("created_at", dayStart).order("created_at"),
+    sb.from("holiday_automations").select("id, name, kind, days, time, active").order("time"),
   ]);
 
   // O que mudou desde a ultima resposta do Holiday.
@@ -103,6 +114,7 @@ export async function loadMemory(sb: SupabaseClient, s: Snapshot, signals: Signa
   }
 
   return {
+    automations: (autos.data || []) as AutomationBrief[],
     longTerm: (mem.data || []) as LongTermMemory[],
     shortTerm: { sinceLastTalk, todayActions: todayActs.data || [] },
     correlation: correlate((daily.data || []) as DailyRow[], signals.map((x) => x.id), s.today),

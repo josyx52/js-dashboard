@@ -88,6 +88,7 @@ export default function HolidayChat() {
   const [voiceOn, setVoiceOn] = useState(false);
   const [conv, setConv] = useState<ConvState>("off");
   const [canTalk, setCanTalk] = useState(false);
+  const [muted, setMuted] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const convRef = useRef<Conversation | null>(null);
@@ -168,10 +169,17 @@ export default function HolidayChat() {
   }
   sendRef.current = send;
 
+  function toggleMute() {
+    const m = !muted;
+    setMuted(m);
+    convRef.current?.setMuted(m);
+  }
+
   function toggleConversation() {
     if (convRef.current) {
       convRef.current.stop();
       convRef.current = null;
+      setMuted(false);
       return;
     }
     setError(null);
@@ -438,7 +446,17 @@ export default function HolidayChat() {
             className={conv === "hearing" || conv === "speaking" ? "animate-pulse" : ""}
             style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: conv === "hearing" ? "#F54E00" : conv === "speaking" ? "#8B7CF6" : conv === "thinking" ? "#E8B93F" : "#3DDC84" }}
           />
-          <span style={{ flex: 1, font: mono(600, 11), color: "rgba(244,244,242,0.7)" }}>{CONV_LABEL[conv]}</span>
+          <span style={{ flex: 1, font: mono(600, 11), color: "rgba(244,244,242,0.7)" }}>
+            {muted && conv !== "speaking" && conv !== "thinking" ? "microfone silenciado — o Holiday não te ouve" : CONV_LABEL[conv]}
+          </span>
+          <button
+            onClick={toggleMute}
+            title={muted ? "Ligar o microfone" : "Silenciar o microfone"}
+            style={{ display: "flex", alignItems: "center", gap: 6, font: mono(700, 10), color: muted ? "#FF5F5F" : "rgba(244,244,242,0.6)", background: muted ? "rgba(255,95,95,0.1)" : "transparent", border: `1px solid ${muted ? "rgba(255,95,95,0.5)" : "rgba(255,255,255,0.14)"}`, borderRadius: 3, padding: "3px 8px", cursor: "pointer" }}
+          >
+            <IconMic className="w-3.5 h-3.5" muted={muted} />
+            {muted ? "LIGAR MIC" : "SILENCIAR"}
+          </button>
           <button onClick={toggleConversation} style={{ font: mono(700, 10), color: "rgba(244,244,242,0.5)", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 3, padding: "3px 8px", cursor: "pointer" }}>
             TERMINAR
           </button>

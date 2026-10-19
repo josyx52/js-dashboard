@@ -5,6 +5,7 @@ import { reason, type HistoryItem, type PastAction } from "./reasoning";
 import { ACTIONS, actionKey, executeAction, validateProposal, type ActionType } from "./actions";
 import { loadMemory, recordDaily } from "./memory";
 import { analyzeMealPhoto, insertPhotoMeal } from "@/lib/nutrition";
+import { KIND_LABEL, type Automation } from "./automations";
 
 // Orquestrador do ciclo completo do Holiday:
 // snapshot -> regras -> problemas -> memoria (curto/longo/correlacao)
@@ -49,7 +50,10 @@ export async function cycle(sb: SupabaseClient) {
 
 export async function think(
   sb: SupabaseClient,
-  opts: { kind: "chat"; message: string; imageBase64?: string; voice?: boolean } | { kind: "briefing" }
+  opts:
+    | { kind: "chat"; message: string; imageBase64?: string; voice?: boolean }
+    | { kind: "briefing" }
+    | { kind: "automation"; automation: Automation }
 ): Promise<{ message: HolidayMessage; actions: HolidayAction[]; problems: Problem[]; userMessage?: HolidayMessage }> {
   const userId = process.env.SYNC_USER_ID;
 
@@ -116,6 +120,9 @@ export async function think(
     userMessage:
       opts.kind === "chat"
         ? [opts.message || (opts.imageBase64 ? "Enviei a foto de uma refeição." : ""), photoNote].filter(Boolean).join("\n")
+        : opts.kind === "automation"
+        ? `AUTOMACAO AGENDADA (${KIND_LABEL[opts.automation.kind]}) "${opts.automation.name}": ${opts.automation.prompt}\n` +
+          "Faz isto agora e deixa no chat o resultado para o Josuel ler, curto. Se for trabalho numa tarefa, guarda-o com save_task_note."
         : BRIEFING_PROMPT,
   });
 
@@ -126,6 +133,7 @@ export async function think(
       content: r.reply,
       problems,
       briefing_date: opts.kind === "briefing" ? snapshot.today : null,
+      automation_id: opts.kind === "automation" ? opts.automation.id : null,
     })
     .select("id, role, content, created_at, problems")
     .single();
@@ -161,6 +169,7 @@ export async function think(
   const ctx = {
     memoryIds: new Set(memory.longTerm.map((x) => x.id)),
     memoryContents: memory.longTerm.map((x) => x.content),
+    automations: memory.automations.map((x) => ({ id: x.id, name: x.name })),
   };
 
   for (const p of r.actions) {
@@ -174,7 +183,7 @@ export async function think(
 
     const risk = ACTIONS[v.type].risk;
     // No briefing so corre sozinho o que mexe na memoria/notas do proprio Holiday.
-    const selfOnly = ["remember", "forget", "save_task_note"].includes(v.type);
+    const selfOnly = ["remember", "forget", "save_task_note", "create_automation", "set_automation"].includes(v.type);
     const autoRun = risk === "low" && (opts.kind === "chat" || selfOnly);
     const exec = autoRun ? await executeAction(sb, v.type as ActionType, v.params, snapshot.today) : null;
 

@@ -78,11 +78,12 @@ export const IconCamera = (props: { className?: string }) => (
   </svg>
 );
 
-export const IconMic = (props: { className?: string }) => (
+export const IconMic = (props: { className?: string; muted?: boolean }) => (
   <svg viewBox="0 0 24 24" className={props.className}>
     <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" strokeWidth="1.7" />
     <path d="M5.5 11 A6.5 6.5 0 0 0 18.5 11" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     <line x1="12" y1="17.5" x2="12" y2="21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    {props.muted && <line x1="4" y1="3.5" x2="20" y2="20.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />}
   </svg>
 );
 
@@ -112,5 +113,13 @@ export const IconSpeaker = (props: { className?: string; muted?: boolean }) => (
 export const IconPlay = (props: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={props.className}>
     <path d="M8 5.5 L18.5 12 L8 18.5 Z" fill="currentColor" />
+  </svg>
+);
+
+export const IconAutomacao = (props: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={props.className}>
+    <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    <path d="M12 7.5 V12 L15 14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M18.5 3.5 V7 H15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );

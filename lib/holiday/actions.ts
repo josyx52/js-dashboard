@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { completeTask } from "@/lib/tasks";
 import { addCalendarEvent, createTodoistTask, rescheduleTodoistTask } from "@/lib/integrations";
 import type { Snapshot } from "./snapshot";
+import { normalizeDays, normalizeTime } from "./automations";
 
 // Etapa 5 do ciclo (SolutionEngine do Jarvis): catalogo fechado de acoes.
 // Risco "low" executa logo; risco "high" (mexe em Todoist/TickTick/Calendar)
@@ -18,7 +19,9 @@ export type ActionType =
   | "remember"
   | "forget"
   | "set_owner"
-  | "save_task_note";
+  | "save_task_note"
+  | "create_automation"
+  | "set_automation";
 
 export interface ActionSpec {
   risk: "low" | "high";
@@ -46,11 +49,18 @@ export const ACTIONS: Record<ActionType, ActionSpec> = {
     params: '{"task_id": string, "owner": "eu"|"holiday", "list"?: "proxima"|"agendada"|"aguardando"|"algum_dia"}',
   },
   save_task_note: { risk: "low", params: '{"task_id": string, "note": string (o trabalho feito/proximo passo)}' },
+  // Agendar atividade do proprio Holiday; o que ela fizer de risco alto continua a pedir aprovacao.
+  create_automation: {
+    risk: "low",
+    params: '{"name": string curta, "kind": "lembrete"|"analise"|"trabalho", "prompt": string (mensagem ou o que fazer), "days": [0-6], "time": "HH:MM"}',
+  },
+  set_automation: { risk: "low", params: '{"automation_id": string, "active": boolean}' },
 };
 
 export interface ValidationContext {
   memoryIds?: Set<string>;
   memoryContents?: string[];
+  automations?: { id: string; name: string }[];
 }
 
 export interface Proposal {
@@ -172,6 +182,30 @@ export function validateProposal(
         summary: `${a.owner === "holiday" ? "Holiday assume" : "Fica contigo"}: ${t.title}${list ? ` (${list.replace("_", " ")})` : ""}`,
       };
     }
+    case "create_automation": {
+      const name = String(a.name || "").trim().slice(0, 80);
+      const prompt = String(a.prompt || "").trim().slice(0, 1000);
+      const kind = ["lembrete", "analise", "trabalho"].includes(a.kind) ? a.kind : null;
+      const days = normalizeDays(a.days);
+      const time = normalizeTime(String(a.time || ""));
+      if (!name || !prompt || !kind || !days || !time) return { ok: false, error: "automacao invalida" };
+      if ((ctx.automations || []).some((x) => x.name.toLowerCase() === name.toLowerCase())) {
+        return { ok: false, error: "ja existe uma automacao com esse nome" };
+      }
+      const DAY = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+      return {
+        ok: true,
+        type,
+        params: { name, kind, prompt, days, time },
+        summary: `Nova automação: ${name} — ${days.length === 7 ? "todos os dias" : days.map((d) => DAY[d]).join(", ")} às ${time}`,
+      };
+    }
+    case "set_automation": {
+      const auto = (ctx.automations || []).find((x) => x.id === a.automation_id);
+      if (!auto) return { ok: false, error: "automacao nao existe" };
+      const active = !!a.active;
+      return { ok: true, type, params: { automation_id: auto.id, active }, summary: `${active ? "Retomar" : "Pausar"} automação: ${auto.name}` };
+    }
     case "save_task_note": {
       const t = task(a.task_id);
       if (!t) return { ok: false, error: `tarefa ${a.task_id} nao existe no snapshot` };
@@ -254,6 +288,14 @@ export async function executeAction(
         .update({ gtd_owner: params.owner, gtd_list: params.list })
         .eq("id", params.task_id);
       return error ? { ok: false, result: error.message } : { ok: true, result: "atualizado" };
+    }
+    case "create_automation": {
+      const { error } = await sb.from("holiday_automations").insert({ ...params, created_by: "holiday" });
+      return error ? { ok: false, result: error.message } : { ok: true, result: "automação criada" };
+    }
+    case "set_automation": {
+      const { error } = await sb.from("holiday_automations").update({ active: params.active }).eq("id", params.automation_id);
+      return error ? { ok: false, result: error.message } : { ok: true, result: params.active ? "retomada" : "pausada" };
     }
     case "save_task_note": {
       const { data: cur } = await sb.from("tasks_cache").select("gtd_note").eq("id", params.task_id).maybeSingle();

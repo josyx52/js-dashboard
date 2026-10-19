@@ -8,7 +8,11 @@ import { cronKey } from "./lib/auth";
 export default {
   fetch: handler.fetch,
 
-  async scheduled(_controller: unknown, env: Record<string, string | undefined>, ctx: { waitUntil(p: Promise<unknown>): void }) {
+  async scheduled(
+    controller: { scheduledTime: number },
+    env: Record<string, string | undefined>,
+    ctx: { waitUntil(p: Promise<unknown>): void }
+  ) {
     if (!env.APP_PASSWORD) {
       console.error("cron sync: APP_PASSWORD nao configurado");
       return;
@@ -22,7 +26,10 @@ export default {
       );
       console.log(`cron ${path}: HTTP ${res.status} ${(await res.text()).slice(0, 500)}`);
     };
-    // Sync primeiro; depois o briefing do Holiday (so gera um por dia, a partir das 07h).
-    ctx.waitUntil(call("/api/sync").then(() => call("/api/holiday/briefing")));
+    // Cron de 15 em 15 min. Sync so na primeira volta de cada hora; o ciclo do
+    // Holiday (historico, automacoes, briefing) corre sempre.
+    const onTheHour = new Date(controller.scheduledTime).getUTCMinutes() < 15;
+    const holiday = () => call("/api/holiday/briefing");
+    ctx.waitUntil(onTheHour ? call("/api/sync").then(holiday) : holiday());
   },
 };

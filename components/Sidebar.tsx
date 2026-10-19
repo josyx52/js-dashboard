@@ -1,7 +1,7 @@
 "use client";
 import { usePathname, useRouter } from "next/navigation";
 import { PILLARS } from "@/lib/types";
-import { IconDashboard, IconNutricao, IconPlug, IconAgendar, IconAgente } from "@/components/icons";
+import { IconDashboard, IconNutricao, IconPlug, IconAgendar, IconAgente, IconAutomacao } from "@/components/icons";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", Icon: IconDashboard },
@@ -9,6 +9,7 @@ const NAV = [
   { href: "/integracoes", label: "Integrações", Icon: IconPlug },
   { href: "/agendar", label: "Agendar", Icon: IconAgendar },
   { href: "/agente", label: "Holiday", Icon: IconAgente },
+  { href: "/automacoes", label: "Automações", Icon: IconAutomacao },
 ];
 
 export default function Sidebar() {

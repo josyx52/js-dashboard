@@ -16,3 +16,35 @@ export function dateInTimeZone(instant: Date, timeZone: string): string {
     return instant.toISOString().slice(0, 10);
   }
 }
+
+// Instante (UTC) de uma hora local num fuso — ex: "2026-10-26" + "07:00" em
+// Lisboa. Funciona nos dois lados da mudanca de hora.
+export function zonedTimeToUtc(date: string, time: string, timeZone: string): Date {
+  const [y, m, d] = date.split("-").map(Number);
+  const [hh, mm] = time.split(":").map(Number);
+  const guess = Date.UTC(y, m - 1, d, hh, mm);
+  const offsetAt = (ms: number) => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(new Date(ms));
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute")) - ms;
+  };
+  const first = guess - offsetAt(guess);
+  return new Date(guess - offsetAt(first));
+}
+
+// Dia da semana (0 = domingo) de uma data YYYY-MM-DD.
+export function weekdayOf(date: string): number {
+  return new Date(date + "T12:00:00Z").getUTCDay();
+}
+
+export function addDays(date: string, n: number): string {
+  return new Date(new Date(date + "T12:00:00Z").getTime() + n * 86400000).toISOString().slice(0, 10);
+}

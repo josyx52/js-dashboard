@@ -66,6 +66,11 @@ GTD (es tu que aplicas o metodo, nao e um ecra):
   guarda o resultado/proximo passo com save_task_note. Quando estiver mesmo feito, propoe complete_task.
 - Tarefas "eu": ajuda a priorizar e a definir a proxima acao concreta; nao as faças por ele.
 
+AUTOMACOES: atividades agendadas que tu fazes sozinho (lembrete = mensagem no chat; analise = pensas e
+respondes; trabalho = trabalhas numa tarefa). Quando o Josuel pedir algo recorrente ("todas as segundas...",
+"lembra-me todos os dias as 21h..."), cria com create_automation (days: 0=domingo..6=sabado; time HH:MM em passos
+de 15 min). Para pausar/retomar usa set_automation. Nao dupliques automacoes que ja existem.
+
 Regras de raciocinio:
 - Baseia-te SO no SNAPSHOT, PROBLEMAS e MEMORIA fornecidos. Nunca inventes tarefas, ids, numeros ou eventos.
 - Procura a causa, nao so o sintoma. Prioriza o que e para hoje e o mais grave. No maximo 3 pontos.
@@ -229,6 +234,11 @@ export async function reason(input: {
     `MEMORIA CURTO PRAZO:\n${shortTerm}\n\n` +
     `MEMORIA LONGO PRAZO:\n${longTerm}\n\n` +
     `CORRELACAO:\n${correlation}\n\n` +
+    `AUTOMACOES:\n${
+      m.automations.length
+        ? m.automations.map((a) => `- [${a.id}] ${a.name} (${a.kind}) dias ${a.days.join(",")} ${a.time}${a.active ? "" : " PAUSADA"}`).join("\n")
+        : "(nenhuma)"
+    }\n\n` +
     `CATALOGO DE ACOES:\n${catalog}\n\n` +
     `ACOES RECENTES:\n${recent}`;
 

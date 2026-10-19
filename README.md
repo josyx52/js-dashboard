@@ -10,6 +10,7 @@ classificação por pilares, e Gemini para analisar fotos de refeições.
 - `/integracoes` — integrações (chaves guardadas no Supabase Vault) + laboratório de tools
 - `/agendar` — eventos no Google Calendar com lembrete
 - `/agente` — **Holiday**: agente com chat por texto ou voz, fotos de refeições e GTD
+- `/automacoes` — agenda semanal do que o Holiday faz sozinho (lembretes, análises, trabalho), com filtros
 - `/login` — palavra-passe única (`APP_PASSWORD`)
 
 ## Arquitetura e segurança
@@ -55,8 +56,13 @@ Holiday interrompe-o. No modo voz as respostas são curtas e naturais (1–3 fra
 - Falar (`/api/holiday/speak`, streaming): ElevenLabs (voz feminina; `eleven_flash_v2_5` na conversa para
   menos latência) → se falhar ou sem chave, voz feminina pt do browser.
 
-**Cron**: de hora a hora, depois do sync, `/api/holiday/briefing` grava o dia no histórico e gera o briefing
-uma vez por dia a partir das 07h (Lisboa).
+**Automações** (`lib/holiday/automations.ts`, `holiday_automations`): atividades agendadas por dias da semana e hora
+(Lisboa, passos de 15 min). *Lembrete* publica a mensagem no chat; *análise* e *trabalho* correm o ciclo completo do
+Holiday. Criadas na página `/automacoes` ou pelo próprio Holiday no chat (`create_automation`/`set_automation`).
+Cada execução fica em `holiday_automation_runs`; se o ciclo atrasar mais de 2 h, fica "perdida".
+
+**Cron** (`*/15 * * * *`): de 15 em 15 min corre `/api/holiday/briefing` (histórico do dia, automações devidas e o
+briefing a partir das 07h); o sync de tarefas só na primeira volta de cada hora.
 
 ## Sync
 - Botão **Sincronizar** no dashboard, e automático **de hora a hora** (cron em
@@ -86,7 +92,7 @@ Migrações em `supabase/migrations/`, aplicadas por ordem no SQL Editor do Supa
 - `0009` — `daily_steps`, `sync_state`, remove a coluna legada `api_key_encrypted`,
   e não deixa criar integrações com nomes repetidos.
 - `0011` — coluna `recurring` em `tasks_cache`; `0012` — tabelas do Holiday; `0013` — memória, histórico
-  diário e campos GTD.
+  diário e campos GTD; `0014` — automações.
 - `0010` — fecha o RLS (policies só para `service_role`). Já aplicada; a versão
   antiga lia a BD diretamente no browser e deixa de funcionar.
 

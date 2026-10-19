@@ -8,8 +8,9 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
-  // Sync automatico de hora a hora (ver handler `scheduled` em worker.ts)
+  // De 15 em 15 min: ciclo do Holiday (automacoes); sync so de hora a hora
+  // (ver handler `scheduled` em worker.ts)
   "triggers": {
-    "crons": ["0 * * * *"]
+    "crons": ["*/15 * * * *"]
   }
 }
