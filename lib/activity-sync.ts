@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dateInTimeZone } from "@/lib/dates";
-import { googleAccessTokenResult } from "@/lib/integrations";
+import { calendarEventsUrl, googleAccessTokenResult } from "@/lib/integrations";
 
 // Historico de atividades e eventos, guardado pela app (ver migracao 0018).
 // Todoist da duas fontes, cada uma incompleta:
@@ -191,7 +191,7 @@ export async function syncCalendarHistory(sb: SupabaseClient, now = new Date()):
   const rows: CalendarRow[] = [];
   let pageToken: string | null = null;
   for (let page = 0; page < 10; page++) {
-    const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+    const url = new URL(calendarEventsUrl());
     url.searchParams.set("timeMin", timeMin.toISOString());
     url.searchParams.set("timeMax", timeMax.toISOString());
     url.searchParams.set("singleEvents", "true");

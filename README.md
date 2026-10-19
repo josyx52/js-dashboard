@@ -108,7 +108,8 @@ briefing a partir das 07h); o sync de tarefas só na primeira volta de cada hora
 | `SUPABASE_SERVICE_ROLE_KEY` | acesso do servidor à BD |
 | `SYNC_USER_ID` | id do utilizador (auth.users) dono das linhas |
 | `TODOIST_API_TOKEN`, `TICKTICK_ACCESS_TOKEN` | tarefas |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | Google Calendar |
+| `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_CALENDAR_ID` | Google Calendar (recomendado): chave JSON de uma conta de serviço + o teu email; o calendário é partilhado com o email da conta de serviço. Não expira nem precisa de app publicada |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | Google Calendar por OAuth (alternativa; em modo Testing o token expira em 7 dias) e base do Google Health |
 | `GOOGLE_HEALTH_REFRESH_TOKEN` | passos (Google Health API) |
 | `GROQ_API_KEY` | agente + classificação por pilares |
 | `GEMINI_API_KEY` | análise de fotos de refeições |

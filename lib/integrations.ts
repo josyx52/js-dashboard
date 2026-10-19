@@ -1,3 +1,4 @@
+import { serviceAccountToken } from "@/lib/google-sa";
 import { dateInTimeZone } from "@/lib/dates";
 
 export interface RawTask {
@@ -10,7 +11,7 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "atividades-1";
+export const DEPLOY_MARKER = "google-sa-1";
 
 
 // Resultado de uma leitura a um provedor. `ok: false` quando o token falta
@@ -174,11 +175,13 @@ export async function completeTickTickTask(
 // Token do Google Calendar, com a causa exata quando falha (ex: invalid_grant =
 // refresh token revogado/expirado — apps OAuth em modo "Testing" expiram em 7 dias).
 export async function googleAccessTokenResult(): Promise<{ token: string | null; error?: string }> {
+  // Preferido: conta de servico (nunca expira). Alternativa: refresh token OAuth.
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return serviceAccountToken(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
   const missing = [!clientId && "GOOGLE_CLIENT_ID", !clientSecret && "GOOGLE_CLIENT_SECRET", !refreshToken && "GOOGLE_REFRESH_TOKEN"].filter(Boolean);
-  if (missing.length) return { token: null, error: `faltam os secrets ${missing.join(", ")}` };
+  if (missing.length) return { token: null, error: `falta GOOGLE_SERVICE_ACCOUNT_JSON (ou ${missing.join(", ")})` };
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -195,6 +198,13 @@ export async function googleAccessTokenResult(): Promise<{ token: string | null;
     return { token: null, error: `Google OAuth: ${why}` };
   }
   return { token: j.access_token };
+}
+
+// Calendario a usar: com a conta de servico, "primary" seria o calendario
+// dela (vazio) — por isso GOOGLE_CALENDAR_ID = o teu email do Google.
+export function calendarEventsUrl(eventId?: string) {
+  const id = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID || "primary");
+  return `https://www.googleapis.com/calendar/v3/calendars/${id}/events${eventId ? `/${encodeURIComponent(eventId)}` : ""}`;
 }
 
 export async function googleAccessToken(): Promise<string | null> {
@@ -269,7 +279,7 @@ export async function fetchCalendarEvents(timeMin: string, timeMax: string): Pro
 export async function fetchCalendarEventsResult(timeMin: string, timeMax: string): Promise<FetchResult<RawEvent>> {
   const { token, error } = await googleAccessTokenResult();
   if (!token) return { ok: false, items: [], error: `sem acesso ao Google Calendar: ${error}` };
-  const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+  const url = new URL(calendarEventsUrl());
   url.searchParams.set("timeMin", timeMin);
   url.searchParams.set("timeMax", timeMax);
   url.searchParams.set("singleEvents", "true");
@@ -300,7 +310,7 @@ export async function addCalendarEvent(
   if (reminderMinutes) {
     body.reminders = { useDefault: false, overrides: [{ method: "popup", minutes: reminderMinutes }] };
   }
-  const r = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+  const r = await fetch(calendarEventsUrl(), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -313,7 +323,7 @@ export async function addCalendarEvent(
 export async function deleteCalendarEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
   const token = await googleAccessToken();
   if (!token) return { ok: false, error: "sem acesso ao Google Calendar" };
-  const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+  const r = await fetch(calendarEventsUrl(eventId), {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
