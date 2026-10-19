@@ -1,3 +1,4 @@
+import { claimsDone, honestReply } from "./honesty";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSnapshot } from "./snapshot";
 import { detectSignals, groupProblems, type Problem } from "./engines";
@@ -295,6 +296,14 @@ export async function think(
       .select(SELECT_ACTION)
       .single();
     if (row) actions.push(row as HolidayAction);
+  }
+
+  // Nunca dizer "ja fiz" quando so propos (risco alto espera pela tua aprovacao).
+  const proposedNow = actions.filter((a) => a.status === "proposed" && a.message_id === msg.id);
+  if (proposedNow.length && claimsDone(msg.content)) {
+    const content = honestReply(proposedNow.map((a) => a.summary || a.type), voice);
+    await sb.from("holiday_messages").update({ content }).eq("id", msg.id);
+    msg.content = content;
   }
 
   // Problemas depois das acoes (ex: a refeicao registada tira o alerta).

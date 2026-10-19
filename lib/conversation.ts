@@ -233,9 +233,10 @@ export class Conversation {
       const form = new FormData();
       form.append("audio", blob, "voz");
       const post = () => fetch("/api/holiday/transcribe", { method: "POST", body: form });
-      // Rede movel instavel: uma nova tentativa antes de desistir.
+      // Rede movel instavel: uma nova tentativa so se o pedido nem chegou ao
+      // servidor (repetir um erro do servidor so gastava o limite da Groq).
       let res = await post().catch(() => null);
-      if (!res || res.status >= 500) {
+      if (!res) {
         await new Promise((r) => setTimeout(r, 1000));
         res = await post();
       }
@@ -243,8 +244,17 @@ export class Conversation {
         window.location.href = "/login?next=/agente";
         return;
       }
+      // Resposta que nao e JSON = pagina de login (sessao do Cloudflare Access expirou).
+      if (!(res.headers.get("content-type") || "").includes("json")) throw new Error("a sessão expirou — recarrega a página");
       const d = await res.json();
       if (!this.alive(gen)) return;
+      if (d.code === "rate_limit") {
+        this.listen();
+        this.set("speaking");
+        await speak("Dá-me só uns segundos, estou com muitos pedidos. Repete daqui a pouco?", { fast: true });
+        if (this.alive(gen)) this.listen();
+        return;
+      }
       if (d.error) throw new Error(d.error);
       const text = String(d.text || "").trim();
       if (text.length < 2) return this.listen();
@@ -259,9 +269,10 @@ export class Conversation {
         if (!this.alive(gen)) return;
       }
       this.listen();
-    } catch {
-      // Falhou mesmo: diz-lo como uma pessoa e continuar a ouvir.
+    } catch (e: any) {
+      // Falhou mesmo: diz-lo como uma pessoa, mostrar a causa e continuar a ouvir.
       if (!this.alive(gen)) return;
+      this.h.onError?.(String(e?.message || e).slice(0, 240));
       this.listen();
       this.set("speaking");
       await speak("Desculpa, não percebi. Podes repetir?", { fast: true });

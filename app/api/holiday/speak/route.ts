@@ -40,7 +40,9 @@ export async function GET(req: NextRequest) {
     );
     if (!r.ok || !r.body) {
       const detail = await r.text().catch(() => "");
-      return NextResponse.json({ error: `ElevenLabs HTTP ${r.status}: ${detail.slice(0, 200)}`, fallback: true }, { status: 502 });
+      // Chave recusada / sem creditos: 501 faz o browser deixar de tentar nesta sessao.
+      const status = [401, 402, 403].includes(r.status) ? 501 : 502;
+      return NextResponse.json({ error: `ElevenLabs HTTP ${r.status}: ${detail.slice(0, 200)}`, fallback: true }, { status });
     }
     return new NextResponse(r.body, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" } });
   } catch (e: any) {
