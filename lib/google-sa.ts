@@ -4,6 +4,11 @@
 // com o email da conta de servico ("Fazer alteracoes nos eventos").
 // Secret: GOOGLE_SERVICE_ACCOUNT_JSON (o ficheiro JSON da chave, inteiro).
 
+// Aceita os dois nomes do secret (GOOGLE_SA_JSON e o nome longo).
+export function serviceAccountJson(): string | undefined {
+  return process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SA_JSON || undefined;
+}
+
 const SCOPE = "https://www.googleapis.com/auth/calendar";
 let cache: { token: string; exp: number } | null = null;
 
@@ -35,7 +40,7 @@ export function parseServiceAccount(raw: string | undefined): { client_email: st
 export async function serviceAccountToken(raw: string): Promise<{ token: string | null; error?: string }> {
   if (cache && cache.exp > Date.now() + 60_000) return { token: cache.token };
   const sa = parseServiceAccount(raw);
-  if (!sa) return { token: null, error: "GOOGLE_SERVICE_ACCOUNT_JSON invalido (cola o ficheiro JSON da chave inteiro)" };
+  if (!sa) return { token: null, error: "o JSON da conta de servico e invalido (cola o ficheiro JSON da chave inteiro)" };
   try {
     const now = Math.floor(Date.now() / 1000);
     const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));

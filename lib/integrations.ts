@@ -1,4 +1,4 @@
-import { serviceAccountToken } from "@/lib/google-sa";
+import { serviceAccountJson, serviceAccountToken } from "@/lib/google-sa";
 import { dateInTimeZone } from "@/lib/dates";
 
 export interface RawTask {
@@ -176,7 +176,8 @@ export async function completeTickTickTask(
 // refresh token revogado/expirado — apps OAuth em modo "Testing" expiram em 7 dias).
 export async function googleAccessTokenResult(): Promise<{ token: string | null; error?: string }> {
   // Preferido: conta de servico (nunca expira). Alternativa: refresh token OAuth.
-  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return serviceAccountToken(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const sa = serviceAccountJson();
+  if (sa) return serviceAccountToken(sa);
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;

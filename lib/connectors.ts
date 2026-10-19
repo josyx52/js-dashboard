@@ -1,3 +1,4 @@
+import { serviceAccountJson } from "@/lib/google-sa";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calendarEventsUrl, googleAccessTokenResult, googleHealthAccessToken } from "@/lib/integrations";
 
@@ -144,19 +145,19 @@ export async function servicesStatus(sb: SupabaseClient): Promise<ServiceStatus[
       }
     ),
     check(
-      { key: "calendar", name: "Google Calendar", purpose: "Agenda: ver eventos e agendar (com aprovação)", setup: "secrets GOOGLE_SERVICE_ACCOUNT_JSON + GOOGLE_CALENDAR_ID (ou GOOGLE_CLIENT_ID/SECRET + GOOGLE_REFRESH_TOKEN)" },
-      !!(env.GOOGLE_SERVICE_ACCOUNT_JSON || (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN)),
+      { key: "calendar", name: "Google Calendar", purpose: "Agenda: ver eventos e agendar (com aprovação)", setup: "secrets GOOGLE_SA_JSON + GOOGLE_CALENDAR_ID (ou GOOGLE_CLIENT_ID/SECRET + GOOGLE_REFRESH_TOKEN)" },
+      !!(serviceAccountJson() || (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN)),
       async () => {
         const { token, error } = await googleAccessTokenResult();
         if (!token) throw new Error(error || "o Google recusou o acesso");
-        if (env.GOOGLE_SERVICE_ACCOUNT_JSON && !env.GOOGLE_CALENDAR_ID) throw new Error("falta o secret GOOGLE_CALENDAR_ID (o teu email do Google)");
+        if (serviceAccountJson() && !env.GOOGLE_CALENDAR_ID) throw new Error("falta o secret GOOGLE_CALENDAR_ID (o teu email do Google)");
         const url = new URL(calendarEventsUrl());
         url.searchParams.set("maxResults", "1");
         const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         const j: any = await r.json().catch(() => ({}));
         if (r.status === 404) throw new Error("calendário não encontrado — partilha-o com o email da conta de serviço");
         if (!r.ok) throw new Error(j?.error?.message || `HTTP ${r.status}`);
-        return `${j.summary || "calendário"} · ${env.GOOGLE_SERVICE_ACCOUNT_JSON ? "conta de serviço" : "OAuth"}`;
+        return `${j.summary || "calendário"} · ${serviceAccountJson() ? "conta de serviço" : "OAuth"}`;
       }
     ),
     check(
