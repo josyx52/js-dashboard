@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
 import { fetchTodoist, fetchTickTick, fetchCalendarEventsResult, RawTask } from "@/lib/integrations";
 import { classifyPillars } from "@/lib/groq";
+import { recordClosed, syncCalendarHistory, syncTodoistActivity } from "@/lib/activity-sync";
 
 export const runtime = "nodejs";
 
@@ -64,7 +65,10 @@ export async function POST() {
           .update({ status: "done", updated_at: now })
           .in("id", gone);
         if (closeErr) summary[`${source}_close_error`] = closeErr.message;
-        else summary[`${source}_closed`] = gone.length;
+        else {
+          summary[`${source}_closed`] = gone.length;
+          await recordClosed(sb, source, gone, now).catch(() => {});
+        }
       }
     }
 
@@ -93,6 +97,16 @@ export async function POST() {
       }
       summary.classified = updates.length;
     }
+
+    // ── Historico de atividades (Todoist) e eventos (Google) para os graficos ──
+    const [act, cal] = await Promise.all([
+      syncTodoistActivity(sb).catch((e) => ({ added: 0, error: String(e?.message || e) })),
+      syncCalendarHistory(sb).catch((e) => ({ events: 0, error: String(e?.message || e) })),
+    ]);
+    summary.activity = act.added;
+    if (act.error) summary.activity_error = act.error;
+    summary.calendar_history = cal.events;
+    if (cal.error) summary.calendar_history_error = cal.error;
 
     // ── Google Calendar -> agenda_cache (agrupado por dia) ──
     const start = new Date();

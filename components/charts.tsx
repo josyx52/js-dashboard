@@ -388,3 +388,199 @@ export function SegmentBar(props: { items: { label: string; value: number; color
     </div>
   );
 }
+
+// Colunas empilhadas por dia (ex: atividades por pilar). 2px de intervalo
+// entre segmentos; o tooltip lista cada segmento com o seu valor.
+export function StackedColumns(props: {
+  data: { x: string; segments: { key: string; label: string; color: string; value: number }[] }[];
+  height?: number;
+  unit?: string;
+}) {
+  const [ref, w] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const h = props.height || 220;
+  const totals = props.data.map((d) => d.segments.reduce((a, s) => a + s.value, 0));
+  const hi = niceMax(Math.max(1, ...totals));
+  const plotW = Math.max(0, w - PAD.left - PAD.right);
+  const plotH = h - PAD.top - PAD.bottom;
+  const n = props.data.length;
+  const slot = plotW / Math.max(1, n);
+  const bw = Math.max(2, Math.min(24, slot - 2));
+  const at = (i: number) => PAD.left + slot * i + slot / 2;
+  const base = PAD.top + plotH;
+  const scale = (v: number) => (v / hi) * plotH;
+  const hv = hover !== null ? props.data[hover] : null;
+  return (
+    <div ref={ref} className="relative w-full" style={{ height: h }}>
+      {w > 0 && (
+        <svg
+          width={w}
+          height={h}
+          className="block touch-none"
+          onPointerLeave={() => setHover(null)}
+          onPointerMove={(e) => {
+            const rect = (e.currentTarget as SVGElement).getBoundingClientRect();
+            const i = Math.floor((e.clientX - rect.left - PAD.left) / (slot || 1));
+            setHover(i >= 0 && i < n ? i : null);
+          }}
+        >
+          <YGrid max={hi} w={w} plotH={plotH} fmt={compact} />
+          {props.data.map((d, i) => {
+            let y = base;
+            const segs = d.segments.filter((s) => s.value > 0);
+            const x = at(i) - bw / 2;
+            return (
+              <g key={i} opacity={hover === null || hover === i ? 1 : 0.4}>
+                {segs.map((s, k) => {
+                  const sh = scale(s.value);
+                  const gap = k > 0 ? 2 : 0;
+                  const top = y - sh;
+                  const last = k === segs.length - 1;
+                  const r = last ? Math.min(4, bw / 2, Math.max(0, sh - gap)) : 0;
+                  const y0 = y - gap;
+                  y = top;
+                  if (sh - gap <= 0.5) return null;
+                  return (
+                    <path
+                      key={s.key}
+                      d={`M${x},${y0}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${y0}Z`}
+                      fill={s.color}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          <XLabels data={props.data.map((d) => ({ x: d.x, y: 0 }))} at={at} h={h} />
+        </svg>
+      )}
+      {hv && hover !== null && (
+        <Tooltip x={at(hover)} width={w}>
+          <div className="text-fg-3 mb-0.5">
+            {shortDay(hv.x)} · <span className="text-fg font-medium tabular">{totals[hover]}</span> {props.unit}
+          </div>
+          {hv.segments
+            .filter((s) => s.value > 0)
+            .map((s) => (
+              <div key={s.key} className="flex items-center gap-1.5 text-fg-2">
+                <span className="w-2 h-2 rounded-sm" style={{ background: s.color }} />
+                {s.label}
+                <span className="ml-auto pl-3 text-fg tabular">{s.value}</span>
+              </div>
+            ))}
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
+// Colunas por categoria fixa (horas do dia, dias da semana), com tooltip.
+export function CategoryColumns(props: { values: number[]; labels: string[]; tickEvery?: number; color?: string; height?: number; unit?: string; fmt?: (n: number) => string }) {
+  const [ref, w] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const h = props.height || 120;
+  const color = props.color || VIZ.blue;
+  const fmt = props.fmt || compact;
+  const n = props.values.length;
+  const mx = Math.max(...props.values, 0);
+  const plotH = h - 20;
+  const slot = w / Math.max(1, n);
+  const bw = Math.max(2, Math.min(24, slot - 2));
+  const peak = props.values.indexOf(mx);
+  return (
+    <div ref={ref} className="relative w-full" style={{ height: h }}>
+      {w > 0 && (
+        <svg width={w} height={h} className="block touch-none" onPointerLeave={() => setHover(null)}>
+          <line x1={0} x2={w} y1={plotH} y2={plotH} stroke={VIZ.grid} />
+          {props.values.map((v, i) => {
+            const bh = mx ? (v / mx) * (plotH - 4) : 0;
+            const x = slot * i + (slot - bw) / 2;
+            const r = Math.min(3, bw / 2, bh);
+            return (
+              <g key={i} onPointerEnter={() => setHover(i)}>
+                <rect x={slot * i} y={0} width={slot} height={h} fill="transparent" />
+                {bh > 0 && (
+                  <path
+                    d={`M${x},${plotH}V${plotH - bh + r}Q${x},${plotH - bh} ${x + r},${plotH - bh}H${x + bw - r}Q${x + bw},${plotH - bh} ${x + bw},${plotH - bh + r}V${plotH}Z`}
+                    fill={color}
+                    opacity={hover === null ? (i === peak ? 1 : 0.55) : hover === i ? 1 : 0.35}
+                  />
+                )}
+                {(props.tickEvery ? i % props.tickEvery === 0 : true) && (
+                  <text x={slot * i + slot / 2} y={h - 4} fontSize={10.5} fill={VIZ.axis} textAnchor="middle" className="tabular">
+                    {props.labels[i]}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
+      {hover !== null && (
+        <Tooltip x={slot * hover + slot / 2} width={w}>
+          <span className="text-fg-3">{props.labels[hover]}</span> <span className="text-fg font-medium tabular">{fmt(props.values[hover])}</span>
+          {props.unit && <span className="text-fg-3"> {props.unit}</span>}
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
+// Lista de barras horizontais (ranking): rotulo, barra e valor.
+export function BarList(props: { items: { label: string; value: number; color?: string; hint?: string }[]; unit?: string; fmt?: (n: number) => string }) {
+  const mx = Math.max(1, ...props.items.map((i) => i.value));
+  const fmt = props.fmt || ((n: number) => String(n));
+  return (
+    <ul className="flex flex-col gap-2.5">
+      {props.items.map((it) => (
+        <li key={it.label} title={it.hint}>
+          <div className="flex items-baseline gap-2 mb-1">
+            <span className="flex-1 min-w-0 truncate text-[12.5px] text-fg-2">{it.label}</span>
+            <span className="text-[12.5px] text-fg font-medium tabular">
+              {fmt(it.value)}
+              {props.unit && <span className="text-fg-3 font-normal"> {props.unit}</span>}
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full bg-line/[0.05] overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${(it.value / mx) * 100}%`, background: it.color || VIZ.blue }} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Grelha de habitos: uma linha por tarefa da rotina, uma celula por dia.
+export function HabitGrid(props: { rows: { id: string; title: string; color: string; days: boolean[]; done: number }[]; days: string[] }) {
+  const n = props.days.length;
+  return (
+    <div className="flex flex-col gap-2">
+      {props.rows.map((r) => (
+        <div key={r.id} className="grid grid-cols-[minmax(0,180px)_1fr_44px] items-center gap-3">
+          <span className="truncate text-[12.5px] text-fg-2" title={r.title}>
+            {r.title}
+          </span>
+          <div className="grid gap-[3px]" style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}>
+            {r.days.map((d, i) => (
+              <span
+                key={i}
+                title={`${shortDay(props.days[i])}: ${d ? "feito" : "por fazer"}`}
+                className="h-4 rounded-[3px]"
+                style={{ background: d ? r.color : "rgb(var(--line) / 0.06)" }}
+              />
+            ))}
+          </div>
+          <span className="text-[12px] tabular text-right text-fg">{Math.round((r.done / Math.max(1, n)) * 100)}%</span>
+        </div>
+      ))}
+      <div className="grid grid-cols-[minmax(0,180px)_1fr_44px] gap-3 mt-1">
+        <span />
+        <div className="flex justify-between text-[10.5px] text-fg-3 tabular">
+          <span>{shortDay(props.days[0])}</span>
+          <span>hoje</span>
+        </div>
+        <span />
+      </div>
+    </div>
+  );
+}

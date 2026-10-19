@@ -10,7 +10,7 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "dashboard-2";
+export const DEPLOY_MARKER = "atividades-1";
 
 
 // Resultado de uma leitura a um provedor. `ok: false` quando o token falta
@@ -171,24 +171,34 @@ export async function completeTickTickTask(
   return { ok: true };
 }
 
-export async function googleAccessToken(): Promise<string | null> {
+// Token do Google Calendar, com a causa exata quando falha (ex: invalid_grant =
+// refresh token revogado/expirado — apps OAuth em modo "Testing" expiram em 7 dias).
+export async function googleAccessTokenResult(): Promise<{ token: string | null; error?: string }> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  if (!clientId || !clientSecret || !refreshToken) return null;
+  const missing = [!clientId && "GOOGLE_CLIENT_ID", !clientSecret && "GOOGLE_CLIENT_SECRET", !refreshToken && "GOOGLE_REFRESH_TOKEN"].filter(Boolean);
+  if (missing.length) return { token: null, error: `faltam os secrets ${missing.join(", ")}` };
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
+      client_id: clientId!,
+      client_secret: clientSecret!,
+      refresh_token: refreshToken!,
       grant_type: "refresh_token",
     }),
   });
-  if (!r.ok) return null;
-  const j: any = await r.json();
-  return j.access_token || null;
+  const j: any = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) {
+    const why = j.error === "invalid_grant" ? "refresh token expirado ou revogado — gera um novo GOOGLE_REFRESH_TOKEN" : j.error_description || j.error || `HTTP ${r.status}`;
+    return { token: null, error: `Google OAuth: ${why}` };
+  }
+  return { token: j.access_token };
+}
+
+export async function googleAccessToken(): Promise<string | null> {
+  return (await googleAccessTokenResult()).token;
 }
 
 export async function googleHealthAccessToken(): Promise<{ token: string | null; error?: string }> {
@@ -257,8 +267,8 @@ export async function fetchCalendarEvents(timeMin: string, timeMax: string): Pro
 }
 
 export async function fetchCalendarEventsResult(timeMin: string, timeMax: string): Promise<FetchResult<RawEvent>> {
-  const token = await googleAccessToken();
-  if (!token) return { ok: false, items: [], error: "sem acesso ao Google Calendar (credenciais ou refresh token)" };
+  const { token, error } = await googleAccessTokenResult();
+  if (!token) return { ok: false, items: [], error: `sem acesso ao Google Calendar: ${error}` };
   const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
   url.searchParams.set("timeMin", timeMin);
   url.searchParams.set("timeMax", timeMax);

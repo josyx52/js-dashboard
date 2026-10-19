@@ -8,7 +8,9 @@ classificação por pilares, e Gemini para analisar fotos de refeições.
 - `/dashboard` — visão geral de todas as áreas (`/api/overview`, `lib/overview.ts`): indicadores com tendência
   (tarefas concluídas, calorias vs meta, peso, passos), produtividade diária, estado de hoje e GTD, pilares,
   calorias e macros, peso, atividade do Holiday, próximas automações e agenda; intervalo 7/30/90 dias.
-  Gráficos em SVG próprio (`components/charts.tsx`), paleta validada para o fundo escuro
+  Gráficos em SVG próprio (`components/charts.tsx`), paleta validada para o fundo escuro.
+  **Atividades**: conclusões por dia e pilar, rotina dia a dia (grelha de hábitos), ritmo por hora/dia da semana,
+  pilares e projetos. **Agenda**: horas em eventos por dia, onde vai o tempo, próximos eventos.
 - `/nutricao` — refeições (foto ou manual), treinos, passos, défice calórico, peso/IMC, perfil
 - `/integracoes` — estado ao vivo de cada serviço (Todoist, TickTick, Google, Groq, Gemini, ElevenLabs, Notion),
   configuração do Notion e chaves guardadas no Supabase Vault
@@ -120,6 +122,9 @@ Migrações em `supabase/migrations/`, aplicadas por ordem no SQL Editor do Supa
   e não deixa criar integrações com nomes repetidos.
 - `0011` — coluna `recurring` em `tasks_cache`; `0012` — tabelas do Holiday; `0013` — memória, histórico
   diário e campos GTD; `0014` — automações; `0015` — configuração por integração; `0016` — definições da app; `0017` — automações por evento.
+- `0018` — `activity_log` (histórico de conclusões: o sync junta o registo de atividade do Todoist — que inclui a
+  rotina mas no plano gratuito só cobre os últimos dias — com as concluídas por data, 90 dias na primeira vez; TickTick
+  regista quando a tarefa sai das abertas) e `calendar_events` (Google Calendar de −90 a +14 dias).
 - `0010` — fecha o RLS (policies só para `service_role`). Já aplicada; a versão
   antiga lia a BD diretamente no browser e deixa de funcionar.
 

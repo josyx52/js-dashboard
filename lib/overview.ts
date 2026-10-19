@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { addDays, dateInTimeZone } from "@/lib/dates";
+import { addDays, dateInTimeZone, weekdayOf } from "@/lib/dates";
 import { calcBMR, GOAL_TARGET_PCT } from "@/lib/bmr";
 import { taskBucket } from "@/lib/task-bucket";
 import { PILLARS } from "@/lib/types";
@@ -62,11 +62,57 @@ export interface Overview {
     next: { name: string; kind: string; at: string }[];
   };
   agenda: { date: string; time: string | null; title: string }[];
+  activity: {
+    total: number;
+    prevTotal: number;
+    since: string | null; // inicio do historico guardado
+    byDay: { date: string; total: number; pillars: Record<string, number> }[];
+    byPillar: { key: string; label: string; color: string; count: number }[];
+    byProject: { name: string; count: number }[];
+    byHour: number[]; // 24, hora local
+    byWeekday: number[]; // 7, segunda..domingo
+    streak: number; // dias seguidos com pelo menos uma atividade
+    routine: { id: string; title: string; color: string; days: boolean[]; done: number }[];
+    routineDays: string[];
+    recent: { content: string; at: string; color: string; pillar: string; project: string | null }[];
+  };
+  calendar: {
+    connected: boolean;
+    error: string | null;
+    count: number;
+    hours: number;
+    avgHours: number;
+    byDay: { date: string; hours: number; count: number }[];
+    top: { title: string; hours: number; count: number }[];
+    byWeekday: number[]; // horas, segunda..domingo
+  };
   lastSyncAt: string | null;
 }
 
+export interface ActivityLogRow {
+  task_id: string;
+  content: string;
+  project_id: string | null;
+  project_name: string | null;
+  recurring: boolean;
+  completed_at: string;
+}
+
+export interface CalendarEventRow {
+  id: string;
+  summary: string;
+  start_at: string | null;
+  end_at: string | null;
+  all_day: boolean;
+  date: string;
+}
+
 export interface OverviewRaw {
-  openTasks: { content: string; due: string | null; pillar: string | null; recurring: boolean | null; gtd_owner: string | null }[];
+  openTasks: { id: string; content: string; due: string | null; pillar: string | null; recurring: boolean | null; gtd_owner: string | null }[];
+  taskPillars: { id: string; pillar: string | null; source_project_id: string | null }[];
+  activity: ActivityLogRow[];
+  calendarEvents: CalendarEventRow[];
+  syncSummary: Record<string, any> | null;
   doneTasks: { updated_at: string }[];
   logs: { created_at: string; kcal: number | string; type: string; protein_g: number | string | null; carbs_g: number | string | null; fat_g: number | string | null }[];
   body: { date: string; weight_kg: number | string | null; body_fat_pct: number | string | null; lean_mass_kg: number | string | null }[];
@@ -93,8 +139,10 @@ export function buildOverview(raw: OverviewRaw, now: Date, days: number): Overvi
   const byDay = new Map<string, DayPoint>();
   for (let d = from; d <= today; d = addDays(d, 1)) byDay.set(d, { date: d, done: 0, kcal_in: null, kcal_training: 0, steps: null });
   let donePrevRange = 0;
-  for (const t of raw.doneTasks) {
-    const d = localDay(t.updated_at);
+  // Historico real (activity_log); sem ele, a data em que o sync viu a tarefa fechada.
+  const doneTimes = raw.activity.length ? raw.activity.map((a) => a.completed_at) : raw.doneTasks.map((t) => t.updated_at);
+  for (const at of doneTimes) {
+    const d = localDay(at);
     const p = byDay.get(d);
     if (p) p.done += 1;
     else if (d >= prevFrom && d < from) donePrevRange += 1;
@@ -226,9 +274,161 @@ export function buildOverview(raw: OverviewRaw, now: Date, days: number): Overvi
       runs,
       next,
     },
-    agenda: agenda.slice(0, 8),
+    agenda: upcoming(raw, today, now) ?? agenda.slice(0, 8),
+    activity: buildActivity(raw, today, from, prevFrom, days),
+    calendar: buildCalendar(raw, from, today),
     lastSyncAt: raw.lastSyncAt,
   };
+}
+
+const NONE = { key: "none", label: "Sem pilar", color: "#6e6e74" }; // cinzento neutro, fora da paleta
+
+// Pilar de cada tarefa; para tarefas sem pilar (ou ja fora da cache), o pilar
+// mais comum do mesmo projeto.
+function pillarResolver(raw: OverviewRaw) {
+  const byTask = new Map<string, string>();
+  const byProject = new Map<string, Map<string, number>>();
+  for (const t of raw.taskPillars) {
+    if (!t.pillar) continue;
+    byTask.set(t.id, t.pillar);
+    if (t.source_project_id) {
+      const m = byProject.get(t.source_project_id) || new Map<string, number>();
+      m.set(t.pillar, (m.get(t.pillar) || 0) + 1);
+      byProject.set(t.source_project_id, m);
+    }
+  }
+  return (taskId: string, projectId: string | null) => {
+    const k = byTask.get(taskId) || (projectId ? [...(byProject.get(projectId) || new Map()).entries()].sort((a, b) => b[1] - a[1])[0]?.[0] : undefined);
+    const p = PILLARS.find((x) => x.key === k);
+    return p ? { key: p.key, label: p.label, color: p.color } : NONE;
+  };
+}
+
+function buildActivity(raw: OverviewRaw, today: string, from: string, prevFrom: string, days: number): Overview["activity"] {
+  const localDay = (iso: string) => dateInTimeZone(new Date(iso), TZ);
+  const localHour = (iso: string) => Number(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" }).format(new Date(iso)));
+  const pillarOf = pillarResolver(raw);
+  const byDay = new Map<string, { date: string; total: number; pillars: Record<string, number> }>();
+  for (let d = from; d <= today; d = addDays(d, 1)) byDay.set(d, { date: d, total: 0, pillars: {} });
+  const byPillar = new Map<string, { key: string; label: string; color: string; count: number }>();
+  const byProject = new Map<string, number>();
+  const byHour = Array(24).fill(0);
+  const byWeekday = Array(7).fill(0);
+  const doneOn = new Map<string, Set<string>>(); // task -> dias
+  let prevTotal = 0;
+  const inRange: (ActivityLogRow & { day: string; pillar: ReturnType<ReturnType<typeof pillarResolver>> })[] = [];
+
+  for (const a of raw.activity) {
+    const day = localDay(a.completed_at);
+    if (day >= prevFrom && day < from) prevTotal += 1;
+    const slot = byDay.get(day);
+    if (!slot) continue;
+    const pillar = pillarOf(a.task_id, a.project_id);
+    slot.total += 1;
+    slot.pillars[pillar.key] = (slot.pillars[pillar.key] || 0) + 1;
+    const bp = byPillar.get(pillar.key) || { ...pillar, count: 0 };
+    bp.count += 1;
+    byPillar.set(pillar.key, bp);
+    if (a.project_name) byProject.set(a.project_name, (byProject.get(a.project_name) || 0) + 1);
+    byHour[localHour(a.completed_at)] += 1;
+    byWeekday[(weekdayOf(day) + 6) % 7] += 1;
+    const set = doneOn.get(a.task_id) || new Set<string>();
+    set.add(day);
+    doneOn.set(a.task_id, set);
+    inRange.push({ ...a, day, pillar });
+  }
+
+  // Dias seguidos com atividade (hoje ainda pode estar a zero).
+  let streak = 0;
+  for (let d = byDay.get(today)?.total ? today : addDays(today, -1); byDay.get(d)?.total; d = addDays(d, -1)) streak += 1;
+
+  // Rotina: tarefas recorrentes abertas x ultimos dias.
+  const nDays = Math.min(days, 30);
+  const routineDays = Array.from({ length: nDays }, (_, i) => addDays(today, i - nDays + 1));
+  const routine = raw.openTasks
+    .filter((t) => t.recurring)
+    .map((t) => {
+      const set = doneOn.get(t.id) || new Set();
+      const daysDone = routineDays.map((d) => set.has(d));
+      return { id: t.id, title: plainTitle(t.content), color: pillarOf(t.id, null).color, days: daysDone, done: daysDone.filter(Boolean).length };
+    })
+    .sort((a, b) => b.done - a.done || a.title.localeCompare(b.title));
+
+  const since = raw.activity.reduce<string | null>((m, a) => (!m || a.completed_at < m ? a.completed_at : m), null);
+  return {
+    total: inRange.length,
+    prevTotal,
+    since: since ? localDay(since) : null,
+    byDay: [...byDay.values()],
+    byPillar: [...PILLARS.map((p) => byPillar.get(p.key)).filter(Boolean), byPillar.get("none")].filter((x): x is NonNullable<typeof x> => !!x),
+    byProject: [...byProject.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 6),
+    byHour,
+    byWeekday,
+    streak,
+    routine,
+    routineDays,
+    recent: inRange
+      .sort((a, b) => b.completed_at.localeCompare(a.completed_at))
+      .slice(0, 8)
+      .map((a) => ({ content: plainTitle(a.content), at: a.completed_at, color: a.pillar.color, pillar: a.pillar.label, project: a.project_name })),
+  };
+}
+
+function eventHours(e: CalendarEventRow) {
+  if (e.all_day || !e.start_at || !e.end_at) return 0;
+  return Math.max(0, Math.min(24, (new Date(e.end_at).getTime() - new Date(e.start_at).getTime()) / 3600000));
+}
+
+function buildCalendar(raw: OverviewRaw, from: string, today: string): Overview["calendar"] {
+  const byDay = new Map<string, { date: string; hours: number; count: number }>();
+  for (let d = from; d <= today; d = addDays(d, 1)) byDay.set(d, { date: d, hours: 0, count: 0 });
+  const top = new Map<string, { title: string; hours: number; count: number }>();
+  const byWeekday = Array(7).fill(0);
+  let count = 0;
+  let hours = 0;
+  for (const e of raw.calendarEvents) {
+    const slot = byDay.get(e.date);
+    if (!slot) continue;
+    const h = eventHours(e);
+    slot.hours += h;
+    slot.count += 1;
+    count += 1;
+    hours += h;
+    byWeekday[(weekdayOf(e.date) + 6) % 7] += h;
+    const title = plainTitle(e.summary);
+    const t = top.get(title) || { title, hours: 0, count: 0 };
+    t.hours += h;
+    t.count += 1;
+    top.set(title, t);
+  }
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const s = raw.syncSummary || {};
+  const error = (s.calendar_history_error || s.calendar_error || null) as string | null;
+  const n = byDay.size || 1;
+  return {
+    connected: !error,
+    error,
+    count,
+    hours: r1(hours),
+    avgHours: r1(hours / n),
+    byDay: [...byDay.values()].map((d) => ({ ...d, hours: r1(d.hours) })),
+    top: [...top.values()].map((t) => ({ ...t, hours: r1(t.hours) })).sort((a, b) => b.hours - a.hours || b.count - a.count).slice(0, 6),
+    byWeekday: byWeekday.map(r1),
+  };
+}
+
+// Proximos eventos a partir do historico do calendario (null = sem dados).
+function upcoming(raw: OverviewRaw, today: string, now: Date): Overview["agenda"] | null {
+  const end = addDays(today, 7);
+  const list = raw.calendarEvents
+    .filter((e) => e.date >= today && e.date <= end && (e.all_day || !e.end_at || new Date(e.end_at) > now))
+    .sort((a, b) => (a.start_at || a.date).localeCompare(b.start_at || b.date));
+  if (!raw.calendarEvents.length) return null;
+  return list.slice(0, 8).map((e) => ({
+    date: e.date,
+    time: e.start_at ? new Date(e.start_at).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit", timeZone: TZ }) : null,
+    title: plainTitle(e.summary),
+  }));
 }
 
 export async function loadOverview(sb: SupabaseClient, now: Date, days: number): Promise<Overview> {
@@ -238,7 +438,7 @@ export async function loadOverview(sb: SupabaseClient, now: Date, days: number):
   const since = new Date(new Date(addDays(today, -(2 * days)) + "T00:00:00Z").getTime() - 86400000).toISOString();
   const rangeSince = new Date(new Date(addDays(today, -days) + "T00:00:00Z").getTime()).toISOString();
   const q = await Promise.all([
-    sb.from("tasks_cache").select("content, due, pillar, recurring, gtd_owner").eq("status", "open"),
+    sb.from("tasks_cache").select("id, content, due, pillar, recurring, gtd_owner").eq("status", "open"),
     sb.from("tasks_cache").select("updated_at").eq("status", "done").gte("updated_at", since),
     sb.from("nutrition_logs").select("created_at, kcal, type, protein_g, carbs_g, fat_g").gte("created_at", rangeSince),
     sb.from("body_composition").select("date, weight_kg, body_fat_pct, lean_mass_kg").order("date", { ascending: false }).limit(60),
@@ -250,11 +450,14 @@ export async function loadOverview(sb: SupabaseClient, now: Date, days: number):
     sb.from("holiday_automations").select("*"),
     sb.from("holiday_automation_runs").select("status").gte("ran_at", rangeSince),
     sb.from("agenda_cache").select("date, payload").gte("date", today),
-    sb.from("sync_state").select("last_sync_at").eq("id", 1).maybeSingle(),
+    sb.from("sync_state").select("last_sync_at, summary").eq("id", 1).maybeSingle(),
+    sb.from("tasks_cache").select("id, pillar, source_project_id"),
+    sb.from("activity_log").select("task_id, content, project_id, project_name, recurring, completed_at").gte("completed_at", since).order("completed_at").limit(5000),
+    sb.from("calendar_events").select("id, summary, start_at, end_at, all_day, date").gte("date", addDays(today, -days)).lte("date", addDays(today, 7)),
   ]);
   const err = q.find((r) => r.error)?.error;
   if (err) throw new Error(err.message);
-  const [open, done, logs, body, profile, steps, actions, msgs, mems, autos, runs, agenda, sync] = q as any[];
+  const [open, done, logs, body, profile, steps, actions, msgs, mems, autos, runs, agenda, sync, pillars, activity, events] = q as any[];
   return buildOverview(
     {
       openTasks: open.data || [],
@@ -270,6 +473,10 @@ export async function loadOverview(sb: SupabaseClient, now: Date, days: number):
       runs: runs.data || [],
       agenda: agenda.data || [],
       lastSyncAt: sync.data?.last_sync_at ?? null,
+      syncSummary: sync.data?.summary ?? null,
+      taskPillars: pillars.data || [],
+      activity: activity.data || [],
+      calendarEvents: events.data || [],
     },
     now,
     days

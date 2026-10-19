@@ -5,11 +5,11 @@ import { api } from "@/lib/api";
 import { localDateKey } from "@/lib/dates";
 import { plainTitle } from "@/lib/text";
 import { taskBucket } from "@/lib/task-bucket";
-import { PILLARS, TaskCache } from "@/lib/types";
+import { PILLARS, PILLAR_STACK_ORDER, TaskCache } from "@/lib/types";
 import type { Overview } from "@/lib/overview";
 import { Badge, Button, Card, ColorDot, EmptyState, Page, PageHeader, Segmented, Skeleton, useToast } from "@/components/ui";
 import { TaskList, type TaskRow, type TaskTab } from "@/components/TaskList";
-import { AreaChart, ColumnChart, Meter, SegmentBar, Sparkline, VIZ, compact, shortDay } from "@/components/charts";
+import { AreaChart, BarList, CategoryColumns, ColumnChart, HabitGrid, Meter, SegmentBar, Sparkline, StackedColumns, VIZ, compact, shortDay } from "@/components/charts";
 import { cn } from "@/lib/cn";
 
 export const dynamic = "force-dynamic";
@@ -79,6 +79,17 @@ function CardTitle(props: { title: string; sub?: React.ReactNode; right?: React.
         {props.sub && <p className="text-[12px] text-fg-3 mt-0.5">{props.sub}</p>}
       </div>
       {props.right}
+    </div>
+  );
+}
+
+const WEEKDAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
+function SectionTitle({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="flex items-baseline gap-3 pt-2 -mb-1">
+      <h2 className="text-[15px] font-semibold text-fg">{title}</h2>
+      {sub && <span className="text-[12.5px] text-fg-3">{sub}</span>}
     </div>
   );
 }
@@ -179,6 +190,17 @@ export default function DashboardPage() {
   const kcalPct = ov && kcalTarget ? Math.round((ov.nutrition.todayIn / kcalTarget) * 100) : null;
   const pillarMax = ov ? Math.max(1, ...ov.tasks.byPillar.map((p) => p.overdue + p.today + p.undated)) : 1;
   const h = ov?.holiday;
+  const act = ov?.activity;
+  const cal = ov?.calendar;
+  const actDelta = act && act.prevTotal > 0 ? ((act.total - act.prevTotal) / act.prevTotal) * 100 : null;
+  // Ordem de empilhamento validada (cores distinguiveis tambem com daltonismo).
+  const stackKeys = act
+    ? [...PILLAR_STACK_ORDER.map((k) => act.byPillar.find((p) => p.key === k)), act.byPillar.find((p) => p.key === "none")].filter((p): p is NonNullable<typeof p> => !!p)
+    : [];
+  const stacked = act ? act.byDay.map((d) => ({ x: d.date, segments: stackKeys.map((k) => ({ key: k.key, label: k.label, color: k.color, value: d.pillars[k.key] || 0 })) })) : [];
+  const peakHour = act && act.total ? act.byHour.indexOf(Math.max(...act.byHour)) : null;
+  const routineCells = act ? act.routine.reduce((a, r) => a + r.days.length, 0) : 0;
+  const routinePct = act && routineCells ? Math.round((act.routine.reduce((a, r) => a + r.done, 0) / routineCells) * 100) : null;
 
   return (
     <Page wide>
@@ -221,27 +243,43 @@ export default function DashboardPage() {
       )}
 
       {/* ── Indicadores ── */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        {!ov ? (
-          [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[138px] rounded-card" />)
+      <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-3">
+        {!ov || !act || !cal ? (
+          [0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-[138px] rounded-card" />)
         ) : (
           <>
             <Kpi
-              href="/dashboard"
-              label={`Concluídas · ${days}d`}
-              value={ov.tasks.doneInRange}
-              delta={<Delta value={doneDelta} />}
-              footer={<Sparkline values={ov.series.map((d) => d.done)} color={VIZ.blue} />}
-              hint={doneDelta === null ? "sem período anterior para comparar" : `vs ${ov.tasks.donePrevRange} nos ${days} dias anteriores`}
+              href="#atividades"
+              label={`Atividades · ${days}d`}
+              value={act.total}
+              delta={<Delta value={actDelta} />}
+              footer={<Sparkline values={act.byDay.map((d) => d.total)} color={VIZ.blue} />}
+              hint={actDelta === null ? `${(act.total / days).toFixed(1).replace(".", ",")} por dia` : `vs ${act.prevTotal} no período anterior`}
+            />
+            <Kpi
+              href="#atividades"
+              label="Rotina cumprida"
+              value={routinePct ?? "—"}
+              unit={routinePct !== null ? "%" : undefined}
+              footer={<Meter value={routinePct ?? 0} max={100} color={VIZ.aqua} className="my-[13px]" />}
+              hint={act.routine.length ? `${act.routine.length} hábitos · ${act.routineDays.length} dias` : "sem tarefas recorrentes"}
+            />
+            <Kpi
+              href="#agenda"
+              label="Tempo em agenda"
+              value={cal.hours.toLocaleString("pt-PT")}
+              unit="h"
+              footer={cal.count ? <Sparkline values={cal.byDay.map((d) => d.hours)} color={VIZ.violet} /> : <div className="h-8" />}
+              hint={cal.connected ? `${cal.count} eventos no período` : "Google Calendar desligado"}
             />
             <Kpi
               href="/nutricao"
               label="Calorias hoje"
               value={ov.nutrition.todayIn ? ov.nutrition.todayIn.toLocaleString("pt-PT") : "0"}
-              unit={kcalTarget ? `/ ${kcalTarget.toLocaleString("pt-PT")} kcal` : "kcal"}
+              unit={kcalTarget ? `/ ${kcalTarget.toLocaleString("pt-PT")}` : "kcal"}
               delta={kcalPct !== null ? <Badge tone={kcalPct > 105 ? "warning" : "neutral"}>{kcalPct}%</Badge> : null}
               footer={<Meter value={ov.nutrition.todayIn} max={kcalTarget || Math.max(ov.nutrition.todayIn, 1)} color={VIZ.orange} className="my-[13px]" />}
-              hint={ov.nutrition.avgKcal ? `média ${ov.nutrition.avgKcal.toLocaleString("pt-PT")} kcal em ${ov.nutrition.loggedDays} dias registados` : "sem refeições no período"}
+              hint={ov.nutrition.avgKcal ? `média ${ov.nutrition.avgKcal.toLocaleString("pt-PT")} kcal/dia` : "sem refeições no período"}
             />
             <Kpi
               href="/nutricao"
@@ -250,56 +288,162 @@ export default function DashboardPage() {
               unit={ov.body.latest?.weight != null ? "kg" : undefined}
               delta={<Delta value={weightDelta} unit=" kg" digits={1} goodWhenUp={ov.nutrition.goal === "ganhar"} />}
               footer={ov.body.series.length > 1 ? <Sparkline values={ov.body.series.map((s) => s.weight)} color={VIZ.aqua} domain="minmax" /> : <div className="h-8" />}
-              hint={
-                ov.body.latest
-                  ? `${ov.body.bmi ? `IMC ${ov.body.bmi.toLocaleString("pt-PT")} · ` : ""}medido ${shortDay(ov.body.latest.date)}`
-                  : "regista o peso na Nutrição"
-              }
+              hint={ov.body.latest ? `${ov.body.bmi ? `IMC ${ov.body.bmi.toLocaleString("pt-PT")} · ` : ""}${shortDay(ov.body.latest.date)}` : "regista o peso"}
             />
             <Kpi
               href="/nutricao"
               label="Passos hoje"
               value={ov.steps.today != null ? ov.steps.today.toLocaleString("pt-PT") : "—"}
               footer={ov.series.some((d) => d.steps) ? <Sparkline values={ov.series.map((d) => d.steps)} color={VIZ.violet} /> : <div className="h-8" />}
-              hint={ov.steps.avg ? `média ${ov.steps.avg.toLocaleString("pt-PT")} por dia` : "sem dados de passos no período"}
+              hint={ov.steps.avg ? `média ${ov.steps.avg.toLocaleString("pt-PT")}` : "sem dados de passos"}
             />
           </>
         )}
       </div>
 
-      {/* ── Produtividade + hoje ── */}
+      {/* ── Atividades ── */}
+      <div id="atividades" className="scroll-mt-20" />
+      <SectionTitle title="Atividades" sub={act?.since ? `Histórico guardado desde ${shortDay(act.since)} · Todoist e TickTick` : "Todoist e TickTick"} />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card className="xl:col-span-2 p-5">
           <CardTitle
-            title="Produtividade"
-            sub={`Tarefas concluídas por dia · últimos ${days} dias`}
+            title="Atividades concluídas"
+            sub={`Por dia e por pilar · últimos ${days} dias`}
             right={
-              ov && (
+              act && (
                 <div className="text-right">
-                  <div className="text-[22px] font-semibold leading-none">{ov.tasks.doneInRange}</div>
-                  <div className="text-[11.5px] text-fg-3 mt-1">{(ov.tasks.doneInRange / days).toFixed(1).replace(".", ",")} / dia</div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Delta value={actDelta} />
+                    <span className="text-[22px] font-semibold leading-none">{act.total}</span>
+                  </div>
+                  <div className="text-[11.5px] text-fg-3 mt-1">
+                    {(act.total / days).toFixed(1).replace(".", ",")} / dia{act.streak > 1 ? ` · ${act.streak} dias seguidos` : ""}
+                  </div>
                 </div>
               )
             }
           />
-          {!ov ? (
-            <Skeleton className="h-[220px]" />
-          ) : ov.tasks.doneInRange ? (
-            <AreaChart data={ov.series.map((d) => ({ x: d.date, y: d.done }))} color={VIZ.blue} unit="tarefas" height={220} />
+          {!act ? (
+            <Skeleton className="h-[240px]" />
+          ) : act.total ? (
+            <>
+              <StackedColumns data={stacked} unit="atividades" height={240} />
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3">
+                {stackKeys.map((k) => (
+                  <span key={k.key} className="flex items-center gap-1.5 text-[12px] text-fg-2">
+                    <span className="w-2 h-2 rounded-sm" style={{ background: k.color }} />
+                    {k.label}
+                  </span>
+                ))}
+              </div>
+            </>
           ) : (
-            <EmptyState className="h-[220px] justify-center" title="Nenhuma tarefa concluída neste período" description="Conclui tarefas aqui, no Todoist ou no TickTick — o gráfico enche-se a cada sync." />
+            <EmptyState className="h-[240px] justify-center" title="Sem atividades neste período" description="O histórico enche-se a cada sync: conclui tarefas aqui, no Todoist ou no TickTick." />
           )}
         </Card>
 
-        <Card className="p-5 flex flex-col">
-          <CardTitle title="Hoje" sub="Estado das tarefas abertas" />
+        <Card className="p-5">
+          <CardTitle title="Ritmo" sub="Quando concluis as atividades" />
+          {act ? (
+            act.total ? (
+              <>
+                <div className="text-[12px] text-fg-3 mb-1">Hora do dia{peakHour !== null ? ` · pico às ${peakHour}h` : ""}</div>
+                <CategoryColumns values={act.byHour} labels={act.byHour.map((_, i) => `${i}h`)} tickEvery={6} color={VIZ.blue} unit="atividades" height={110} />
+                <div className="text-[12px] text-fg-3 mt-5 mb-1">Dia da semana</div>
+                <CategoryColumns values={act.byWeekday} labels={WEEKDAYS} color={VIZ.blue} unit="atividades" height={100} />
+              </>
+            ) : (
+              <EmptyState title="Ainda sem ritmo" description="Aparece quando houver atividades concluídas." />
+            )
+          ) : (
+            <Skeleton className="h-[240px]" />
+          )}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <Card className="xl:col-span-2 p-5">
+          <CardTitle
+            title="Rotina"
+            sub={act ? `Tarefas recorrentes · últimos ${act.routineDays.length} dias` : "Tarefas recorrentes"}
+            right={act && act.routine.length > 0 && <Badge tone={routinePct !== null && routinePct >= 70 ? "success" : "neutral"}>{routinePct}% cumprida</Badge>}
+          />
+          {!act ? (
+            <Skeleton className="h-[160px]" />
+          ) : act.routine.length ? (
+            <HabitGrid rows={act.routine} days={act.routineDays} />
+          ) : (
+            <EmptyState title="Sem rotina definida" description="As tarefas recorrentes do Todoist (ex: acordar às 6:00) aparecem aqui, dia a dia." />
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <CardTitle title="Por pilar" sub="Onde foi o esforço no período" />
+          {act ? (
+            act.total ? (
+              <>
+                <BarList items={act.byPillar.map((p) => ({ label: p.label, value: p.count, color: p.color }))} />
+                {act.byProject.length > 0 && (
+                  <div className="mt-5 pt-4 border-t border-line/[0.06]">
+                    <div className="text-[12px] text-fg-3 mb-2.5">Projetos</div>
+                    <BarList items={act.byProject.map((p) => ({ label: p.name, value: p.count, color: "rgb(var(--fg-3))" }))} />
+                  </div>
+                )}
+              </>
+            ) : (
+              <EmptyState title="Sem dados" />
+            )
+          ) : (
+            <Skeleton className="h-[200px]" />
+          )}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+        <div className="xl:col-span-2">
+          <TaskList tab={tab} onTab={setTab} lists={lists} onComplete={completeTask} />
+        </div>
+        <Card className="p-5">
+          <CardTitle title="Tarefas abertas" sub="Estado de hoje e por pilar" />
           {ov ? (
             <>
               <Stat label="Para hoje (com rotina)" value={ov.tasks.today} />
               <Stat label="Atrasadas" value={ov.tasks.overdue} tone={ov.tasks.overdue ? "danger" : undefined} />
               <Stat label="Atraso mais antigo" value={ov.tasks.oldestOverdueDays != null ? `${ov.tasks.oldestOverdueDays} dias` : "—"} tone={ov.tasks.oldestOverdueDays && ov.tasks.oldestOverdueDays > 7 ? "warning" : undefined} />
-              <Stat label="Sem data" value={ov.tasks.undated} />
-              <div className="mt-5">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-5 mb-3">
+                {[
+                  ["Atrasadas", VIZ.red],
+                  ["Hoje", VIZ.blue],
+                  ["Sem data", VIZ.yellow],
+                ].map(([l, c]) => (
+                  <span key={l} className="flex items-center gap-1.5 text-[12px] text-fg-2">
+                    <span className="w-2 h-2 rounded-sm" style={{ background: c }} />
+                    {l}
+                  </span>
+                ))}
+              </div>
+              <ul className="flex flex-col gap-2.5">
+                {ov.tasks.byPillar.map((p) => {
+                  const total = p.overdue + p.today + p.undated;
+                  return (
+                    <li key={p.key} className="grid grid-cols-[84px_1fr_24px] items-center gap-3" title={`${p.label}: ${p.overdue} atrasadas, ${p.today} hoje, ${p.undated} sem data`}>
+                      <span className="flex items-center gap-2 text-[12.5px] text-fg-2 truncate">
+                        <ColorDot color={p.color} />
+                        {p.label}
+                      </span>
+                      <div className="h-2 rounded-[3px] bg-line/[0.05] overflow-hidden">
+                        <div className="h-full flex gap-[2px]" style={{ width: `${(total / pillarMax) * 100}%` }}>
+                          {p.overdue > 0 && <div className="h-full" style={{ flexGrow: p.overdue, background: VIZ.red }} />}
+                          {p.today > 0 && <div className="h-full" style={{ flexGrow: p.today, background: VIZ.blue }} />}
+                          {p.undated > 0 && <div className="h-full" style={{ flexGrow: p.undated, background: VIZ.yellow }} />}
+                        </div>
+                      </div>
+                      <span className="text-[12.5px] tabular text-right text-fg">{total}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="mt-5 pt-4 border-t border-line/[0.06]">
                 <div className="text-[12px] text-fg-3 mb-2">Quem faz (GTD)</div>
                 <SegmentBar
                   items={[
@@ -311,55 +455,107 @@ export default function DashboardPage() {
               </div>
             </>
           ) : (
-            <Skeleton className="flex-1 min-h-[200px]" />
+            <Skeleton className="h-[320px]" />
           )}
         </Card>
       </div>
 
-      {/* ── Tarefas + pilares ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
-        <div className="xl:col-span-2">
-          <TaskList tab={tab} onTab={setTab} lists={lists} onComplete={completeTask} />
-        </div>
-        <Card className="p-5">
-          <CardTitle title="Pilares" sub="Tarefas abertas por área da vida" />
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-4">
-            {[
-              ["Atrasadas", VIZ.red],
-              ["Hoje", VIZ.blue],
-              ["Sem data", VIZ.yellow],
-            ].map(([l, c]) => (
-              <span key={l} className="flex items-center gap-1.5 text-[12px] text-fg-2">
-                <span className="w-2 h-2 rounded-sm" style={{ background: c }} />
-                {l}
-              </span>
-            ))}
+      {/* ── Agenda ── */}
+      <div id="agenda" className="scroll-mt-20" />
+      <SectionTitle title="Agenda" sub="Google Calendar" />
+      {cal && !cal.connected && (
+        <Card className="border-warning/30 bg-warning/[0.04] px-4 py-3 flex flex-wrap items-center gap-3">
+          <span className="w-2 h-2 rounded-full bg-warning flex-none" />
+          <div className="flex-1 min-w-[240px]">
+            <div className="text-[13px] text-fg font-medium">O Google Calendar não está a sincronizar</div>
+            <div className="text-[12px] text-fg-2 mt-0.5 break-words">{cal.error}</div>
           </div>
-          <ul className="flex flex-col gap-3">
-            {(ov?.tasks.byPillar ?? PILLARS.map((p) => ({ ...p, overdue: 0, today: 0, undated: 0 }))).map((p) => {
-              const total = p.overdue + p.today + p.undated;
-              return (
-                <li key={p.key} className="grid grid-cols-[88px_1fr_28px] items-center gap-3" title={`${p.label}: ${p.overdue} atrasadas, ${p.today} hoje, ${p.undated} sem data`}>
-                  <span className="flex items-center gap-2 text-[12.5px] text-fg-2 truncate">
-                    <ColorDot color={p.color} />
-                    {p.label}
-                  </span>
-                  <div className="h-2.5 rounded-[3px] bg-line/[0.05] overflow-hidden">
-                    <div className="h-full flex gap-[2px]" style={{ width: `${(total / pillarMax) * 100}%` }}>
-                      {p.overdue > 0 && <div className="h-full rounded-l-[3px]" style={{ flexGrow: p.overdue, background: VIZ.red }} />}
-                      {p.today > 0 && <div className="h-full" style={{ flexGrow: p.today, background: VIZ.blue }} />}
-                      {p.undated > 0 && <div className="h-full" style={{ flexGrow: p.undated, background: VIZ.yellow }} />}
-                    </div>
+          <Link href="/integracoes">
+            <Button size="sm">Ver integrações</Button>
+          </Link>
+        </Card>
+      )}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <Card className="xl:col-span-2 p-5">
+          <CardTitle
+            title="Tempo em agenda"
+            sub={`Horas de eventos por dia · últimos ${days} dias`}
+            right={
+              cal && (
+                <div className="text-right">
+                  <div className="text-[22px] font-semibold leading-none">
+                    {cal.hours.toLocaleString("pt-PT")}
+                    <span className="text-[13px] text-fg-3 font-normal"> h</span>
                   </div>
-                  <span className="text-[12.5px] tabular text-right text-fg">{ov ? total : "—"}</span>
-                </li>
-              );
-            })}
-          </ul>
+                  <div className="text-[11.5px] text-fg-3 mt-1">
+                    {cal.count} eventos · {cal.avgHours.toLocaleString("pt-PT")} h / dia
+                  </div>
+                </div>
+              )
+            }
+          />
+          {!cal ? (
+            <Skeleton className="h-[200px]" />
+          ) : cal.count ? (
+            <>
+              <ColumnChart data={cal.byDay.map((d) => ({ x: d.date, y: d.hours || null }))} color={VIZ.violet} unit="h" height={200} fmt={(n) => (n % 1 ? n.toFixed(1).replace(".", ",") : String(n))} />
+              {cal.top.length > 0 && (
+                <div className="mt-5 pt-4 border-t border-line/[0.06] grid grid-cols-1 md:grid-cols-[1fr_200px] gap-6">
+                  <div>
+                    <div className="text-[12px] text-fg-3 mb-2.5">Onde vai o tempo</div>
+                    <BarList
+                      items={cal.top.map((t) => ({ label: t.title, value: t.hours, color: VIZ.violet, hint: `${t.count} eventos` }))}
+                      unit="h"
+                      fmt={(n) => n.toLocaleString("pt-PT")}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-[12px] text-fg-3 mb-1">Horas por dia da semana</div>
+                    <CategoryColumns values={cal.byWeekday} labels={WEEKDAYS} color={VIZ.violet} unit="h" height={120} fmt={(n) => n.toLocaleString("pt-PT")} />
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <EmptyState className="h-[200px] justify-center" title="Sem eventos neste período" description={cal.connected ? "Nenhum evento no Google Calendar nestes dias." : "Volta a ligar o Google Calendar para ver o histórico."} />
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <CardTitle
+            title="Próximos eventos"
+            sub="Próximos 7 dias"
+            right={
+              <Link href="/agendar" className="text-[12.5px] text-fg-2 hover:text-fg">
+                Agenda →
+              </Link>
+            }
+          />
+          {ov ? (
+            ov.agenda.length ? (
+              <ul>
+                {ov.agenda.map((e, i) => (
+                  <li key={i} className="flex items-center gap-3 h-11 border-b border-line/[0.05] last:border-b-0">
+                    <div className="w-11 flex-none text-center">
+                      <div className="text-[10.5px] uppercase text-fg-3">{e.date === ov.today ? "hoje" : new Date(e.date + "T12:00:00Z").toLocaleDateString("pt-PT", { weekday: "short" }).replace(".", "")}</div>
+                      <div className="text-[13px] font-semibold tabular leading-tight">{Number(e.date.slice(8))}</div>
+                    </div>
+                    <span className="flex-1 min-w-0 truncate text-[13px]">{e.title}</span>
+                    <span className="text-[12px] text-fg-3 tabular">{e.time ?? "dia todo"}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState title="Agenda livre" description="Sem eventos nos próximos 7 dias." action={<Link href="/agendar"><Button size="sm">Novo evento</Button></Link>} />
+            )
+          ) : (
+            <Skeleton className="h-[160px]" />
+          )}
         </Card>
       </div>
 
       {/* ── Saude ── */}
+      <SectionTitle title="Saúde" sub="Nutrição, peso e passos" />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card className="xl:col-span-2 p-5">
           <CardTitle
@@ -433,7 +629,8 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* ── Holiday, automacoes, agenda ── */}
+      {/* ── Holiday ── */}
+      <SectionTitle title="Holiday" sub="O que o agente fez e vai fazer" />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
         <Card className="p-5">
           <CardTitle
@@ -518,31 +715,23 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="p-5">
-          <CardTitle
-            title="Agenda"
-            sub="Próximos 7 dias · Google Calendar"
-            right={
-              <Link href="/agendar" className="text-[12.5px] text-fg-2 hover:text-fg">
-                Agenda →
-              </Link>
-            }
-          />
-          {ov ? (
-            ov.agenda.length ? (
+          <CardTitle title="Atividade recente" sub="Últimas conclusões" />
+          {act ? (
+            act.recent.length ? (
               <ul>
-                {ov.agenda.map((e, i) => (
+                {act.recent.slice(0, 6).map((r, i) => (
                   <li key={i} className="flex items-center gap-3 h-11 border-b border-line/[0.05] last:border-b-0">
-                    <div className="w-11 flex-none text-center">
-                      <div className="text-[10.5px] uppercase text-fg-3">{e.date === ov.today ? "hoje" : new Date(e.date + "T12:00:00Z").toLocaleDateString("pt-PT", { weekday: "short" }).replace(".", "")}</div>
-                      <div className="text-[13px] font-semibold tabular leading-tight">{Number(e.date.slice(8))}</div>
+                    <ColorDot color={r.color} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] truncate">{r.content}</div>
+                      <div className="text-[11.5px] text-fg-3 truncate">{r.project ?? r.pillar}</div>
                     </div>
-                    <span className="flex-1 min-w-0 truncate text-[13px]">{e.title}</span>
-                    <span className="text-[12px] text-fg-3 tabular">{e.time ?? "dia todo"}</span>
+                    <span className="text-[12px] text-fg-3 tabular">{lisbonDay(r.at) === ov!.today ? time(r.at) : shortDay(lisbonDay(r.at))}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <EmptyState title="Agenda livre" description="Sem eventos nos próximos 7 dias." action={<Link href="/agendar"><Button size="sm">Novo evento</Button></Link>} />
+              <EmptyState title="Nada concluído ainda" />
             )
           ) : (
             <Skeleton className="h-[160px]" />

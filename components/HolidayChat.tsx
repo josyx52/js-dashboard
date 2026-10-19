@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { PILLARS } from "@/lib/types";
 import { compressImageToBase64 } from "@/lib/image";
 import { IconCamera, IconMic, IconPlay, IconSpeaker, IconStop } from "@/components/icons";
 import { Badge, Button, ColorDot, SectionLabel, StatusDot, useToast } from "@/components/ui";
@@ -52,13 +53,9 @@ interface Delegated {
   note: string | null;
 }
 
+// Uma so fonte para as cores dos pilares (lib/types).
 const AREA: Record<string, { label: string; color: string }> = {
-  deus: { label: "Deus", color: "#E8B93F" },
-  saude: { label: "Saúde", color: "#F54E00" },
-  familia: { label: "Família", color: "#8B7CF6" },
-  estudo: { label: "Estudo", color: "#36CFC9" },
-  negocio: { label: "Negócio", color: "#EF5DA8" },
-  trabalho: { label: "Trabalho", color: "#4F8FF7" },
+  ...Object.fromEntries(PILLARS.map((p) => [p.key, { label: p.label, color: p.color }])),
   sistema: { label: "Sistema", color: "rgb(var(--fg-3))" },
 };
 const SEV_TONE: Record<Severity, "danger" | "warning" | "neutral"> = { alta: "danger", media: "warning", baixa: "neutral" };

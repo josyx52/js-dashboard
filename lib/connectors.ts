@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { googleAccessToken, googleHealthAccessToken } from "@/lib/integrations";
+import { googleAccessTokenResult, googleHealthAccessToken } from "@/lib/integrations";
 
 // Servicos ligados ao sistema: estado real (teste ao vivo) e o que o Holiday
 // faz com cada um. Os tokens vivem nos secrets do Worker; o do Notion no
@@ -147,8 +147,8 @@ export async function servicesStatus(sb: SupabaseClient): Promise<ServiceStatus[
       { key: "calendar", name: "Google Calendar", purpose: "Agenda: ver eventos e agendar (com aprovação)", setup: "secrets GOOGLE_CLIENT_ID/SECRET + GOOGLE_REFRESH_TOKEN" },
       !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN),
       async () => {
-        const token = await googleAccessToken();
-        if (!token) throw new Error("o refresh token foi recusado — volta a autorizar a conta Google");
+        const { token, error } = await googleAccessTokenResult();
+        if (!token) throw new Error(error || "o refresh token foi recusado — volta a autorizar a conta Google");
         const j = await getJson("https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=50", {
           headers: { Authorization: `Bearer ${token}` },
         });
