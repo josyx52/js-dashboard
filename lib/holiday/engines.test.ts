@@ -21,6 +21,9 @@ const task = (p: Partial<SnapTask>): SnapTask => ({
   pillar: "saude",
   recurring: false,
   bucket: "undated",
+  owner: null,
+  list: null,
+  note: null,
   ...p,
 });
 
@@ -55,6 +58,17 @@ describe("detectSignals", () => {
   it("peso registado ha mais de 7 dias", () => {
     const ids = detectSignals({ ...base, body: { weight_kg: 79, body_fat_pct: null, date: "2026-09-02" } }).map((s) => s.id);
     expect(ids).toContain("weight:stale");
+  });
+});
+
+describe("GTD", () => {
+  it("tarefas delegadas ao Holiday sem nota geram backlog", () => {
+    const sigs = detectSignals({ ...base, tasks: [task({ id: "a", owner: "holiday" }), task({ id: "b", owner: "holiday", note: "feito" })] });
+    expect(sigs.find((x) => x.id === "gtd:holiday_backlog")?.taskIds).toEqual(["a"]);
+  });
+  it("sem dono e nao recorrente fica por esclarecer", () => {
+    const sigs = detectSignals({ ...base, tasks: [task({ id: "a" }), task({ id: "b", recurring: true, bucket: "today" }), task({ id: "c", owner: "eu" })] });
+    expect(sigs.find((x) => x.id === "gtd:unclarified")?.taskIds).toEqual(["a"]);
   });
 });
 

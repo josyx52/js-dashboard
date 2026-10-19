@@ -9,7 +9,7 @@ classificação por pilares, e Gemini para analisar fotos de refeições.
 - `/nutricao` — refeições (foto ou manual), treinos, passos, défice calórico, peso/IMC, perfil
 - `/integracoes` — integrações (chaves guardadas no Supabase Vault) + laboratório de tools
 - `/agendar` — eventos no Google Calendar com lembrete
-- `/agente` — **Holiday** (agente), calculadora por foto e delegação GTD
+- `/agente` — **Holiday**: agente com chat por texto ou voz, fotos de refeições e GTD
 - `/login` — palavra-passe única (`APP_PASSWORD`)
 
 ## Arquitetura e segurança
@@ -25,17 +25,31 @@ classificação por pilares, e Gemini para analisar fotos de refeições.
 ## Holiday (agente)
 Mesma estrutura de pensamento do Jarvis — ciclo fechado detetar → correlacionar → raciocinar → resolver
 (`lib/holiday/`):
-1. **Snapshot** (`snapshot.ts`) — tarefas, refeições de hoje, peso, perfil, passos, último sync. Sem IA.
-2. **Regras** (`engines.ts`) — sinais determinísticos (rotina por fazer, atrasadas por pilar, duplicados,
-   sem refeições, défice fora da meta, peso antigo, sync parado), agrupados em problemas por pilar.
-3. **Raciocínio** (`reasoning.ts`) — Groq (`openai/gpt-oss-120b`) em modo JSON: análise causal, resposta e
-   ações propostas. Circuit breaker: 3 falhas seguidas → 30 s sem IA; nesse caso responde só com as regras.
-4. **Ações** (`actions.ts`) — catálogo fechado. Risco baixo (registar refeição/treino, peso) executa logo;
-   risco alto (concluir/criar/reagendar tarefa, criar evento) fica num cartão para aprovar. Cada proposta é
-   validada contra o snapshot (ids inventados são descartados) e nada que falhou nas últimas 24 h é repetido.
-5. **Memória** — `holiday_messages` e `holiday_actions` no Supabase.
+1. **Snapshot** (`snapshot.ts`) — tarefas (com dono GTD), refeições de hoje, peso, perfil, passos, sync. Sem IA.
+2. **Regras** (`engines.ts`) — sinais determinísticos agrupados em problemas por pilar: rotina, atrasadas,
+   duplicados, refeições, défice, peso, sync, e GTD (tarefas por esclarecer, delegadas ao Holiday sem trabalho).
+3. **Memória** (`memory.ts`, `correlate.ts`):
+   - *curto prazo* — conversa recente, o que mudou desde a última conversa, ações de hoje;
+   - *longo prazo* — `holiday_memories` (factos, preferências, objetivos, padrões), geridas pelo próprio
+     Holiday (`remember`/`forget`) e visíveis/apagáveis no chat;
+   - *correlação* — `holiday_daily` (1 linha/dia, atualizada pelo cron): linha de base, padrões por dia da
+     semana, correlações entre métricas, tendência de peso e há quantos dias cada problema persiste.
+4. **Raciocínio** (`reasoning.ts`) — Groq (`openai/gpt-oss-120b`) em modo JSON. Circuit breaker: 3 falhas
+   seguidas → 30 s sem IA; nesse caso responde só com as regras.
+5. **Ações** (`actions.ts`) — catálogo fechado. Risco baixo executa logo (refeição, peso, memória, dono GTD,
+   notas de trabalho); risco alto pede aprovação (concluir/criar/reagendar tarefa, evento). Propostas validadas
+   contra o snapshot; nada que falhou nas últimas 24 h é repetido.
 
-Briefing diário: o cron chama `/api/holiday/briefing` depois do sync; gera um por dia a partir das 07h (Lisboa).
+**GTD** é usado pelo Holiday, não é um ecrã: cada tarefa tem dono (`eu` / `holiday` / por esclarecer) e lista
+(próxima, agendada, aguardando, algum dia). As tarefas delegadas ao Holiday são trabalho dele (rascunhos,
+planos, listas), guardado em `gtd_note`.
+
+**Fotos e voz**: o 📷 do chat analisa o prato (Gemini) e regista-o; o 🎤 grava, transcreve com o Whisper da
+Groq (`/api/holiday/transcribe`) e envia. As respostas a mensagens de voz (ou com 🔊 ligado) são lidas em voz
+alta pelo browser.
+
+**Cron**: de hora a hora, depois do sync, `/api/holiday/briefing` grava o dia no histórico e gera o briefing
+uma vez por dia a partir das 07h (Lisboa).
 
 ## Sync
 - Botão **Sincronizar** no dashboard, e automático **de hora a hora** (cron em
@@ -62,7 +76,8 @@ Briefing diário: o cron chama `/api/holiday/briefing` depois do sync; gera um p
 Migrações em `supabase/migrations/`, aplicadas por ordem no SQL Editor do Supabase.
 - `0009` — `daily_steps`, `sync_state`, remove a coluna legada `api_key_encrypted`,
   e não deixa criar integrações com nomes repetidos.
-- `0011` — coluna `recurring` em `tasks_cache`; `0012` — tabelas do Holiday.
+- `0011` — coluna `recurring` em `tasks_cache`; `0012` — tabelas do Holiday; `0013` — memória, histórico
+  diário e campos GTD.
 - `0010` — fecha o RLS (policies só para `service_role`). Já aplicada; a versão
   antiga lia a BD diretamente no browser e deixa de funcionar.
 

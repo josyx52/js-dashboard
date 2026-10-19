@@ -90,6 +90,31 @@ export function detectSignals(s: Snapshot): Signal[] {
     });
   }
 
+  // ── GTD ──
+  // Tarefas que delegaste ao Holiday e em que ele ainda nao trabalhou.
+  const mine = s.tasks.filter((t) => t.owner === "holiday" && !t.note);
+  if (mine.length > 0) {
+    out.push({
+      id: "gtd:holiday_backlog",
+      area: "sistema",
+      severity: "media",
+      title: `${mine.length} tarefa(s) delegada(s) ao Holiday sem trabalho feito`,
+      detail: mine.map((t) => t.title).join(" · "),
+      taskIds: mine.map((t) => t.id),
+    });
+  }
+  // Por esclarecer: sem dono definido (nem tu nem o Holiday), fora a rotina.
+  const unclear = s.tasks.filter((t) => !t.owner && !t.recurring && t.bucket !== "future");
+  if (unclear.length > 0) {
+    out.push({
+      id: "gtd:unclarified",
+      area: "sistema",
+      severity: "baixa",
+      title: `${unclear.length} tarefa(s) por esclarecer — quem faz: tu ou o Holiday?`,
+      taskIds: unclear.map((t) => t.id),
+    });
+  }
+
   // ── Nutricao ──
   const meals = s.meals.filter((m) => m.type === "in");
   if (meals.length === 0 && s.hour >= 14) {

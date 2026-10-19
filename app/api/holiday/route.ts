@@ -11,13 +11,19 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const sb = supabaseServer();
-    const [{ data: msgs, error }, snapshot] = await Promise.all([
+    const [{ data: msgs, error }, snapshot, { data: memories }] = await Promise.all([
       sb
         .from("holiday_messages")
         .select("id, role, content, created_at")
         .order("created_at", { ascending: false })
         .limit(40),
       buildSnapshot(sb),
+      sb
+        .from("holiday_memories")
+        .select("id, kind, area, content, importance, created_at")
+        .eq("active", true)
+        .order("importance", { ascending: false })
+        .order("created_at", { ascending: false }),
     ]);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     const messages = (msgs || []).reverse();
@@ -34,6 +40,10 @@ export async function GET() {
       messages,
       actions: actions || [],
       problems: groupProblems(detectSignals(snapshot)),
+      memories: memories || [],
+      delegated: snapshot.tasks
+        .filter((t) => t.owner === "holiday")
+        .map((t) => ({ id: t.id, title: t.title, due: t.due, list: t.list, note: t.note })),
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
@@ -42,11 +52,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message } = await req.json();
+    const { message, imageBase64 } = await req.json();
     const text = String(message || "").trim();
-    if (!text) return NextResponse.json({ error: "mensagem obrigatoria" }, { status: 400 });
+    const image = typeof imageBase64 === "string" && imageBase64 ? imageBase64 : undefined;
+    if (!text && !image) return NextResponse.json({ error: "mensagem ou foto obrigatoria" }, { status: 400 });
     if (text.length > 4000) return NextResponse.json({ error: "mensagem demasiado longa" }, { status: 400 });
-    const result = await think(supabaseServer(), { kind: "chat", message: text });
+    const result = await think(supabaseServer(), { kind: "chat", message: text, imageBase64: image });
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });

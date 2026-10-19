@@ -7,9 +7,9 @@ const snap: Snapshot = {
   today: "2026-10-19",
   hour: 11,
   tasks: [
-    { id: "t1", source: "todoist", title: "Bíblia", due: "2026-07-28", pillar: "deus", recurring: true, bucket: "today" },
-    { id: "t2", source: "todoist", title: "Criar logo", due: "2026-08-01", pillar: "negocio", recurring: false, bucket: "overdue" },
-    { id: "tt-3", source: "ticktick", title: "Acordar", due: "2026-07-28", pillar: "saude", recurring: true, bucket: "today" },
+    { id: "t1", source: "todoist", title: "Bíblia", due: "2026-07-28", pillar: "deus", recurring: true, bucket: "today", owner: null, list: null, note: null },
+    { id: "t2", source: "todoist", title: "Criar logo", due: "2026-08-01", pillar: "negocio", recurring: false, bucket: "overdue", owner: null, list: null, note: null },
+    { id: "tt-3", source: "ticktick", title: "Acordar", due: "2026-07-28", pillar: "saude", recurring: true, bucket: "today", owner: null, list: null, note: null },
   ],
   meals: [],
   body: null,

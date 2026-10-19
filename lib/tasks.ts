@@ -37,7 +37,7 @@ export async function completeTask(
   // Marca localmente sempre — mesmo que a chamada remota falhe, o
   // utilizador ve o resultado esperado na app; o erro remoto fica
   // reportado para diagnostico, nao bloqueia a UI.
-  const { error: updateErr } = await sb.from("tasks_cache").update({ status: "done" }).eq("id", taskId);
+  const { error: updateErr } = await sb.from("tasks_cache").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", taskId);
   if (updateErr) return { ok: false, remote_synced: remoteOk, remote_error: remoteError || null, error: updateErr.message };
 
   return { ok: true, remote_synced: remoteOk, remote_error: remoteOk ? null : remoteError || null };

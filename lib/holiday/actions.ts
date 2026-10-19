@@ -14,7 +14,11 @@ export type ActionType =
   | "complete_task"
   | "create_task"
   | "reschedule_task"
-  | "schedule_event";
+  | "schedule_event"
+  | "remember"
+  | "forget"
+  | "set_owner"
+  | "save_task_note";
 
 export interface ActionSpec {
   risk: "low" | "high";
@@ -31,7 +35,23 @@ export const ACTIONS: Record<ActionType, ActionSpec> = {
     risk: "high",
     params: '{"summary": string, "start": ISO com fuso, "end": ISO com fuso, "reminder_minutes"?: number}',
   },
+  // Memoria e GTD: so mexem nos dados do proprio Holiday, por isso sao "low".
+  remember: {
+    risk: "low",
+    params: '{"kind": "fato"|"preferencia"|"objetivo"|"padrao", "content": string curta, "area"?: pilar, "importance"?: 1-5}',
+  },
+  forget: { risk: "low", params: '{"memory_id": string (id da MEMORIA LONGO PRAZO)}' },
+  set_owner: {
+    risk: "low",
+    params: '{"task_id": string, "owner": "eu"|"holiday", "list"?: "proxima"|"agendada"|"aguardando"|"algum_dia"}',
+  },
+  save_task_note: { risk: "low", params: '{"task_id": string, "note": string (o trabalho feito/proximo passo)}' },
 };
+
+export interface ValidationContext {
+  memoryIds?: Set<string>;
+  memoryContents?: string[];
+}
 
 export interface Proposal {
   type: string;
@@ -45,7 +65,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // da rejeicao (ids inventados, parametros em falta, etc.).
 export function validateProposal(
   p: Proposal,
-  snap: Snapshot
+  snap: Snapshot,
+  ctx: ValidationContext = {}
 ): { ok: true; type: ActionType; params: Record<string, any>; summary: string } | { ok: false; error: string } {
   if (!(p.type in ACTIONS)) return { ok: false, error: `tipo desconhecido: ${p.type}` };
   const type = p.type as ActionType;
@@ -120,6 +141,44 @@ export function validateProposal(
         summary: `Agendar "${summary}" — ${when}`,
       };
     }
+    case "remember": {
+      const kinds = ["fato", "preferencia", "objetivo", "padrao"];
+      const content = String(a.content || "").trim().slice(0, 300);
+      if (!content || !kinds.includes(a.kind)) return { ok: false, error: "memoria invalida" };
+      const norm = content.toLowerCase();
+      if ((ctx.memoryContents || []).some((m) => m.toLowerCase() === norm)) return { ok: false, error: "ja lembrado" };
+      const importance = Math.min(5, Math.max(1, Math.round(Number(a.importance) || 3)));
+      return {
+        ok: true,
+        type,
+        params: { kind: a.kind, content, area: a.area ? String(a.area) : null, importance },
+        summary: `Lembrar (${a.kind}): ${content}`,
+      };
+    }
+    case "forget": {
+      if (!ctx.memoryIds?.has(a.memory_id)) return { ok: false, error: "memoria nao existe" };
+      return { ok: true, type, params: { memory_id: a.memory_id }, summary: "Esquecer uma memória" };
+    }
+    case "set_owner": {
+      const t = task(a.task_id);
+      if (!t) return { ok: false, error: `tarefa ${a.task_id} nao existe no snapshot` };
+      if (a.owner !== "eu" && a.owner !== "holiday") return { ok: false, error: "owner invalido" };
+      const lists = ["proxima", "agendada", "aguardando", "algum_dia"];
+      const list = lists.includes(a.list) ? a.list : null;
+      return {
+        ok: true,
+        type,
+        params: { task_id: t.id, owner: a.owner, list },
+        summary: `${a.owner === "holiday" ? "Holiday assume" : "Fica contigo"}: ${t.title}${list ? ` (${list.replace("_", " ")})` : ""}`,
+      };
+    }
+    case "save_task_note": {
+      const t = task(a.task_id);
+      if (!t) return { ok: false, error: `tarefa ${a.task_id} nao existe no snapshot` };
+      const note = String(a.note || "").trim().slice(0, 2000);
+      if (!note) return { ok: false, error: "nota vazia" };
+      return { ok: true, type, params: { task_id: t.id, note }, summary: `Trabalho registado em: ${t.title}` };
+    }
   }
 }
 
@@ -174,6 +233,34 @@ export async function executeAction(
     case "schedule_event": {
       const r = await addCalendarEvent(params.summary, params.start, params.end, params.reminder_minutes);
       return r.ok ? { ok: true, result: "evento criado no Google Calendar" } : { ok: false, result: r.error || "falhou" };
+    }
+    case "remember": {
+      const { error } = await sb.from("holiday_memories").insert({
+        kind: params.kind,
+        content: params.content,
+        area: params.area,
+        importance: params.importance,
+        source: params.kind === "padrao" ? "correlacao" : "conversa",
+      });
+      return error ? { ok: false, result: error.message } : { ok: true, result: "guardado na memória" };
+    }
+    case "forget": {
+      const { error } = await sb.from("holiday_memories").update({ active: false }).eq("id", params.memory_id);
+      return error ? { ok: false, result: error.message } : { ok: true, result: "esquecido" };
+    }
+    case "set_owner": {
+      const { error } = await sb
+        .from("tasks_cache")
+        .update({ gtd_owner: params.owner, gtd_list: params.list })
+        .eq("id", params.task_id);
+      return error ? { ok: false, result: error.message } : { ok: true, result: "atualizado" };
+    }
+    case "save_task_note": {
+      const { data: cur } = await sb.from("tasks_cache").select("gtd_note").eq("id", params.task_id).maybeSingle();
+      const stamp = new Date(today + "T12:00:00Z").toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" });
+      const note = `${cur?.gtd_note ? cur.gtd_note + "\n" : ""}[${stamp}] ${params.note}`.slice(-4000);
+      const { error } = await sb.from("tasks_cache").update({ gtd_note: note }).eq("id", params.task_id);
+      return error ? { ok: false, result: error.message } : { ok: true, result: "nota guardada" };
     }
   }
 }

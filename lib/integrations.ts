@@ -10,7 +10,7 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "holiday-1";
+export const DEPLOY_MARKER = "holiday-2";
 
 
 // Resultado de uma leitura a um provedor. `ok: false` quando o token falta
@@ -46,47 +46,6 @@ export async function fetchTodoist(): Promise<FetchResult<RawTask>> {
     cursor = j.next_cursor || null;
   } while (cursor);
   return { ok: true, items: out };
-}
-
-// Cria uma tarefa real no Todoist — usada pela execucao real da delegacao GTD.
-// Marca com o rotulo "delegada-agente" para se distinguir de tarefas normais.
-export async function addTodoistTask(
-  content: string
-): Promise<{ ok: boolean; id?: string; error?: string }> {
-  const token = process.env.TODOIST_API_TOKEN;
-  if (!token) return { ok: false, error: "TODOIST_API_TOKEN nao configurado" };
-  const r = await fetch("https://api.todoist.com/api/v1/tasks", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ content, labels: ["delegada-agente"] }),
-  });
-  const j: any = await r.json();
-  if (!r.ok) return { ok: false, error: JSON.stringify(j) };
-  return { ok: true, id: j.id };
-}
-
-// Delegar uma tarefa que JA esta no Todoist: so acrescenta o rotulo, em vez
-// de criar uma copia (antes ficavam duas tarefas iguais).
-export async function labelTodoistTask(
-  taskId: string,
-  label = "delegada-agente"
-): Promise<{ ok: boolean; id?: string; error?: string }> {
-  const token = process.env.TODOIST_API_TOKEN;
-  if (!token) return { ok: false, error: "TODOIST_API_TOKEN nao configurado" };
-  const h = { Authorization: `Bearer ${token}` };
-  const g = await fetch(`https://api.todoist.com/api/v1/tasks/${taskId}`, { headers: h });
-  if (!g.ok) return { ok: false, error: `Todoist HTTP ${g.status}` };
-  const task: any = await g.json();
-  const labels: string[] = task.labels || [];
-  if (!labels.includes(label)) {
-    const r = await fetch(`https://api.todoist.com/api/v1/tasks/${taskId}`, {
-      method: "POST",
-      headers: { ...h, "Content-Type": "application/json" },
-      body: JSON.stringify({ labels: [...labels, label] }),
-    });
-    if (!r.ok) return { ok: false, error: JSON.stringify(await r.json().catch(() => ({}))) };
-  }
-  return { ok: true, id: taskId };
 }
 
 // Tarefa nova criada pelo Holiday (com aprovacao) — rotulo "holiday".

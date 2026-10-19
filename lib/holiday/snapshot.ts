@@ -20,6 +20,10 @@ export interface SnapTask {
   pillar: Pillar | null;
   recurring: boolean;
   bucket: Bucket;
+  // GTD: quem faz (eu / holiday / null = por esclarecer), lista e notas do Holiday
+  owner: "eu" | "holiday" | null;
+  list: "proxima" | "agendada" | "aguardando" | "algum_dia" | null;
+  note: string | null;
 }
 
 export interface SnapMeal {
@@ -59,12 +63,32 @@ function startOfLocalDay(now: Date, today: string): string {
   return new Date(new Date(`${today}T00:00:00Z`).getTime() - offsetMs).toISOString();
 }
 
+// Numeros do dia usados no historico (holiday_daily) e na correlacao.
+export function dailyMetrics(s: Snapshot, bmr: number | null) {
+  const kcalIn = s.meals.filter((m) => m.type === "in").reduce((a, m) => a + m.kcal, 0);
+  const treino = s.meals.filter((m) => m.type === "out").reduce((a, m) => a + m.kcal, 0);
+  const w = s.body?.weight_kg ?? null;
+  const stepsKcal = s.steps && w ? Math.round(s.steps * w * 0.0005) : 0;
+  const kcalOut = bmr !== null ? bmr + stepsKcal + treino : null;
+  const meals = s.meals.filter((m) => m.type === "in").length;
+  return {
+    kcal_in: kcalIn,
+    kcal_out: kcalOut,
+    meals,
+    deficit_pct: kcalOut && meals > 0 ? Math.round(((kcalOut - kcalIn) / kcalOut) * 100) : null,
+    steps: s.steps,
+    weight_kg: w,
+    today_pending: s.tasks.filter((t) => t.bucket === "today").length,
+    overdue: s.tasks.filter((t) => t.bucket === "overdue").length,
+  };
+}
+
 export async function buildSnapshot(sb: SupabaseClient, now = new Date()): Promise<Snapshot> {
   const today = dateInTimeZone(now, HOLIDAY_TZ);
   const dayStart = startOfLocalDay(now, today);
 
   const [tasksQ, mealsQ, bodyQ, profileQ, stepsQ, syncQ] = await Promise.all([
-    sb.from("tasks_cache").select("id, source, content, due, pillar, recurring").eq("status", "open"),
+    sb.from("tasks_cache").select("id, source, content, due, pillar, recurring, gtd_owner, gtd_list, gtd_note").eq("status", "open"),
     sb.from("nutrition_logs").select("label, kcal, type, created_at").gte("created_at", dayStart).order("created_at"),
     sb.from("body_composition").select("weight_kg, body_fat_pct, date").order("date", { ascending: false }).limit(1).maybeSingle(),
     sb.from("user_profile").select("height_cm, age, sex, goal").limit(1).maybeSingle(),
@@ -92,6 +116,9 @@ export async function buildSnapshot(sb: SupabaseClient, now = new Date()): Promi
       pillar: t.pillar,
       recurring: !!t.recurring,
       bucket: taskBucket(t.due, !!t.recurring, today),
+      owner: t.gtd_owner ?? null,
+      list: t.gtd_list ?? null,
+      note: t.gtd_note ?? null,
     })),
     meals: (mealsQ.data || []).map((m: any) => ({ label: m.label, kcal: Number(m.kcal), type: m.type, at: m.created_at })),
     body: bodyQ.data ? { weight_kg: bodyQ.data.weight_kg, body_fat_pct: bodyQ.data.body_fat_pct, date: bodyQ.data.date } : null,
