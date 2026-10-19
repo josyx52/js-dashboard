@@ -52,12 +52,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, imageBase64 } = await req.json();
+    const { message, imageBase64, voice } = await req.json();
     const text = String(message || "").trim();
     const image = typeof imageBase64 === "string" && imageBase64 ? imageBase64 : undefined;
     if (!text && !image) return NextResponse.json({ error: "mensagem ou foto obrigatoria" }, { status: 400 });
     if (text.length > 4000) return NextResponse.json({ error: "mensagem demasiado longa" }, { status: 400 });
-    const result = await think(supabaseServer(), { kind: "chat", message: text, imageBase64: image });
+    const result = await think(supabaseServer(), { kind: "chat", message: text, imageBase64: image, voice: !!voice });
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });

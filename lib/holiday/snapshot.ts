@@ -83,7 +83,13 @@ export function dailyMetrics(s: Snapshot, bmr: number | null) {
   };
 }
 
-export async function buildSnapshot(sb: SupabaseClient, now = new Date()): Promise<Snapshot> {
+// skipRemote: nao chama o Google Health (passos) — usado na conversa por voz,
+// onde cada segundo de espera conta.
+export async function buildSnapshot(
+  sb: SupabaseClient,
+  now = new Date(),
+  opts: { skipRemote?: boolean } = {}
+): Promise<Snapshot> {
   const today = dateInTimeZone(now, HOLIDAY_TZ);
   const dayStart = startOfLocalDay(now, today);
 
@@ -97,7 +103,7 @@ export async function buildSnapshot(sb: SupabaseClient, now = new Date()): Promi
   ]);
 
   let steps: number | null = stepsQ.data?.steps ?? null;
-  if (steps === null) {
+  if (steps === null && !opts.skipRemote) {
     // Google Health e opcional — se falhar, o Holiday segue sem passos.
     steps = await fetchFitbitSteps(today)
       .then((r) => r.steps)

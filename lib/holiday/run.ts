@@ -49,7 +49,7 @@ export async function cycle(sb: SupabaseClient) {
 
 export async function think(
   sb: SupabaseClient,
-  opts: { kind: "chat"; message: string; imageBase64?: string } | { kind: "briefing" }
+  opts: { kind: "chat"; message: string; imageBase64?: string; voice?: boolean } | { kind: "briefing" }
 ): Promise<{ message: HolidayMessage; actions: HolidayAction[]; problems: Problem[]; userMessage?: HolidayMessage }> {
   const userId = process.env.SYNC_USER_ID;
 
@@ -79,10 +79,12 @@ export async function think(
     }
   }
 
-  const snapshot = await buildSnapshot(sb);
+  const voice = opts.kind === "chat" && !!opts.voice;
+  const snapshot = await buildSnapshot(sb, new Date(), { skipRemote: voice });
   const signals = detectSignals(snapshot);
   const problems = groupProblems(signals);
-  await recordDaily(sb, snapshot, signals);
+  // Na conversa por voz o historico diario fica para o cron (sem passos remotos).
+  if (!voice) await recordDaily(sb, snapshot, signals);
 
   const [{ data: hist }, { data: recent }, memory] = await Promise.all([
     sb.from("holiday_messages").select("role, content").order("created_at", { ascending: false }).limit(12),
@@ -110,6 +112,7 @@ export async function think(
     history,
     recentActions,
     memory,
+    voice,
     userMessage:
       opts.kind === "chat"
         ? [opts.message || (opts.imageBase64 ? "Enviei a foto de uma refeição." : ""), photoNote].filter(Boolean).join("\n")
@@ -194,7 +197,7 @@ export async function think(
   }
 
   // Problemas depois das acoes (ex: a refeicao registada tira o alerta).
-  const after = actions.some((a) => a.status === "executed")
+  const after = actions.some((a) => a.status === "executed") && !voice
     ? groupProblems(detectSignals(await buildSnapshot(sb)))
     : problems;
 

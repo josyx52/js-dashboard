@@ -45,9 +45,15 @@ Mesma estrutura de pensamento do Jarvis — ciclo fechado detetar → correlacio
 (próxima, agendada, aguardando, algum dia). As tarefas delegadas ao Holiday são trabalho dele (rascunhos,
 planos, listas), guardado em `gtd_note`.
 
-**Fotos e voz**: o 📷 do chat analisa o prato (Gemini) e regista-o; o 🎤 grava, transcreve com o Whisper da
-Groq (`/api/holiday/transcribe`) e envia. As respostas a mensagens de voz (ou com VOZ ligado) são lidas em
-voz alta com a ElevenLabs (`/api/holiday/speak`) ou, sem chave, com uma voz feminina pt do browser.
+**Fotos**: o botão da câmara no chat analisa o prato (Gemini), regista-o e o Holiday já raciocina com ele.
+
+**Conversa por voz** (`lib/conversation.ts`, `lib/speech.ts`): o botão do microfone liga um modo contínuo —
+o microfone fica aberto, um detetor de voz (volume face ao ruído de fundo, calibrado no início) percebe quando
+começas e acabas de falar (pausa de 1 s), envia a frase, fala a resposta e volta a ouvir. Falar por cima do
+Holiday interrompe-o. No modo voz as respostas são curtas e naturais (1–3 frases).
+- Ouvir (`/api/holiday/transcribe`): ElevenLabs Scribe → se falhar ou sem chave, Whisper da Groq.
+- Falar (`/api/holiday/speak`, streaming): ElevenLabs (voz feminina; `eleven_flash_v2_5` na conversa para
+  menos latência) → se falhar ou sem chave, voz feminina pt do browser.
 
 **Cron**: de hora a hora, depois do sync, `/api/holiday/briefing` grava o dia no histórico e gera o briefing
 uma vez por dia a partir das 07h (Lisboa).
@@ -72,7 +78,7 @@ uma vez por dia a partir das 07h (Lisboa).
 | `GROQ_API_KEY` | agente + classificação por pilares |
 | `GEMINI_API_KEY` | análise de fotos de refeições |
 | `STEPS_TOKEN` | opcional — `POST /api/steps` manual (ex: Atalhos do iOS) |
-| `ELEVENLABS_API_KEY` | opcional — voz do Holiday (feminina, realista). Sem ela usa a voz do browser |
+| `ELEVENLABS_API_KEY` | opcional — voz do Holiday (falar e ouvir). Sem ela: voz do browser e Whisper |
 | `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | opcional — trocar voz (padrão "Sarah") e modelo (padrão `eleven_multilingual_v2`) |
 
 ## Base de dados

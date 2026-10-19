@@ -154,6 +154,7 @@ export async function reason(input: {
   history: HistoryItem[];
   recentActions: PastAction[];
   memory: Memory;
+  voice?: boolean;
   userMessage: string;
 }): Promise<Reasoning> {
   const key = process.env.GROQ_API_KEY;
@@ -201,6 +202,17 @@ export async function reason(input: {
       role: h.role === "user" ? "user" : "assistant",
       content: h.content.slice(0, 600),
     })),
+    ...(input.voice
+      ? [
+          {
+            role: "system",
+            content:
+              "MODO CONVERSA POR VOZ: estas a falar com ele em tempo real. Responde como uma pessoa numa conversa: " +
+              "1 a 3 frases curtas e naturais, sem listas, sem simbolos, sem ids. Se precisares de detalhe, pergunta se ele quer. " +
+              "A transcricao pode ter erros: interpreta pelo contexto.",
+          },
+        ]
+      : []),
     { role: "user", content: input.userMessage },
   ];
 

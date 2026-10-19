@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { compressImageToBase64 } from "@/lib/image";
 import { IconCamera, IconMic, IconPlay, IconSpeaker, IconStop } from "@/components/icons";
+import { speak, stopSpeaking } from "@/lib/speech";
+import { Conversation, conversationSupported, type ConvState } from "@/lib/conversation";
 
 type Severity = "alta" | "media" | "baixa";
 
@@ -71,68 +73,6 @@ function time(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
 }
 
-// Voz do Holiday: ElevenLabs (servidor) quando ha chave; senao, a voz
-// feminina pt do sistema. Um so audio de cada vez.
-let currentAudio: HTMLAudioElement | null = null;
-let elevenAvailable = true; // passa a false se o servidor disser que nao ha chave
-
-const FEMALE_HINTS = /joana|catarina|raquel|fernanda|francisca|luciana|helena|ines|inês|maria|female|feminina|mulher/i;
-
-function stopSpeaking() {
-  currentAudio?.pause();
-  currentAudio = null;
-  if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
-}
-
-function browserSpeak(text: string) {
-  if (!("speechSynthesis" in window)) return;
-  const voices = window.speechSynthesis.getVoices();
-  const pt = voices.filter((v) => v.lang.toLowerCase().startsWith("pt"));
-  const voice =
-    pt.find((v) => v.lang === "pt-PT" && FEMALE_HINTS.test(v.name)) ||
-    pt.find((v) => FEMALE_HINTS.test(v.name)) ||
-    pt.find((v) => v.lang === "pt-PT") ||
-    pt[0] ||
-    null;
-  const u = new SpeechSynthesisUtterance(text);
-  u.voice = voice;
-  u.lang = voice?.lang || "pt-PT";
-  u.rate = 1.03;
-  u.pitch = voice && FEMALE_HINTS.test(voice.name) ? 1 : 1.15; // sem voz feminina, aproxima
-  window.speechSynthesis.speak(u);
-}
-
-async function speak(text: string) {
-  stopSpeaking();
-  const clean = text.replace(/[*_#`>]/g, "");
-  if (elevenAvailable) {
-    try {
-      const res = await fetch("/api/holiday/speak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: clean }),
-      });
-      if (res.ok) {
-        const url = URL.createObjectURL(await res.blob());
-        const audio = new Audio(url);
-        audio.onended = () => URL.revokeObjectURL(url);
-        currentAudio = audio;
-        await audio.play();
-        return;
-      }
-      if (res.status === 501) elevenAvailable = false;
-    } catch {
-      // cai para a voz do browser
-    }
-  }
-  browserSpeak(clean);
-}
-
-function pickMime(): string | undefined {
-  if (typeof MediaRecorder === "undefined") return undefined;
-  return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((m) => MediaRecorder.isTypeSupported(m));
-}
-
 export default function HolidayChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [actions, setActions] = useState<Action[]>([]);
@@ -146,12 +86,12 @@ export default function HolidayChat() {
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [canRecord, setCanRecord] = useState(false);
+  const [conv, setConv] = useState<ConvState>("off");
+  const [canTalk, setCanTalk] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const recRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const convRef = useRef<Conversation | null>(null);
+  const sendRef = useRef<(o: { text?: string; voice?: boolean }) => Promise<string | null>>(async () => null);
 
   async function load() {
     try {
@@ -172,12 +112,13 @@ export default function HolidayChat() {
 
   useEffect(() => {
     load();
-    setCanRecord(!!navigator.mediaDevices?.getUserMedia && !!pickMime());
+    setCanTalk(conversationSupported());
     try {
       setVoiceOn(localStorage.getItem("holiday_voice") === "1");
     } catch {}
     // As vozes carregam de forma assincrona em alguns browsers.
     if ("speechSynthesis" in window) window.speechSynthesis.getVoices();
+    return () => convRef.current?.stop();
   }, []);
 
   useEffect(() => {
@@ -187,15 +128,17 @@ export default function HolidayChat() {
   function toggleVoice() {
     const v = !voiceOn;
     setVoiceOn(v);
-    if (!v) stopSpeaking();
+    if (!v && !convRef.current) stopSpeaking();
     try {
       localStorage.setItem("holiday_voice", v ? "1" : "0");
     } catch {}
   }
 
-  async function send(opts: { text?: string; imageBase64?: string; spoken?: boolean } = {}) {
+  // Envia uma mensagem; devolve a resposta (usada pelo modo conversa para a falar).
+  async function send(opts: { text?: string; imageBase64?: string; voice?: boolean } = {}): Promise<string | null> {
     const text = (opts.text ?? draft).trim();
-    if ((!text && !opts.imageBase64) || thinking) return;
+    if (!text && !opts.imageBase64) return null;
+    if (thinking && !opts.voice) return null;
     if (opts.text === undefined) setDraft("");
     setError(null);
     setThinking(opts.imageBase64 ? "a analisar a foto e a pensar…" : "a pensar: snapshot → regras → memória → raciocínio…");
@@ -206,7 +149,7 @@ export default function HolidayChat() {
     ]);
     try {
       const d = await api<{ message: Message; actions: Action[]; problems: Problem[]; userMessage?: Message }>("/api/holiday", {
-        body: { message: text, imageBase64: opts.imageBase64 },
+        body: { message: text, imageBase64: opts.imageBase64, voice: !!opts.voice },
       });
       setMessages((p) => [...p.map((m) => (m.id === tempId && d.userMessage ? d.userMessage : m)), d.message]);
       setActions((p) => [...p, ...d.actions]);
@@ -214,12 +157,34 @@ export default function HolidayChat() {
       if (d.actions.some((a) => a.status === "executed" && ["remember", "forget", "set_owner", "save_task_note"].includes(a.type))) {
         load(); // memoria / delegadas mudaram
       }
-      if (voiceOn || opts.spoken) speak(d.message.content);
+      if (voiceOn && !opts.voice) speak(d.message.content);
+      return d.message.content;
     } catch (e: any) {
       setError(e.message);
+      return opts.voice ? "Desculpa, falhou aqui do meu lado. Podes repetir?" : null;
     } finally {
       setThinking(null);
     }
+  }
+  sendRef.current = send;
+
+  function toggleConversation() {
+    if (convRef.current) {
+      convRef.current.stop();
+      convRef.current = null;
+      return;
+    }
+    setError(null);
+    const c = new Conversation({
+      onState: (st) => {
+        setConv(st);
+        if (st === "off") convRef.current = null;
+      },
+      onUtterance: (text) => sendRef.current({ text, voice: true }),
+      onError: (msg) => setError(msg),
+    });
+    convRef.current = c;
+    c.start();
   }
 
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
@@ -233,50 +198,6 @@ export default function HolidayChat() {
       await send({ text, imageBase64: base64 });
     } catch (err: any) {
       setError("Foto: " + (err?.message || err));
-    }
-  }
-
-  async function toggleRecording() {
-    if (recording) {
-      recRef.current?.stop();
-      return;
-    }
-    setError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = pickMime();
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      chunksRef.current = [];
-      rec.ondataavailable = (ev) => ev.data.size > 0 && chunksRef.current.push(ev.data);
-      rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        setRecording(false);
-        const blob = new Blob(chunksRef.current, { type: rec.mimeType || mime || "audio/webm" });
-        if (blob.size < 1000) return; // clique sem fala
-        setThinking("a ouvir…");
-        try {
-          const form = new FormData();
-          form.append("audio", blob, "voz");
-          const res = await fetch("/api/holiday/transcribe", { method: "POST", body: form });
-          if (res.status === 401) {
-            window.location.href = "/login?next=/agente";
-            return;
-          }
-          const d = await res.json();
-          if (d.error) throw new Error(d.error);
-          setThinking(null);
-          if (d.text) await send({ text: d.text, spoken: true });
-        } catch (err: any) {
-          setThinking(null);
-          setError("Voz: " + (err?.message || err));
-        }
-      };
-      recRef.current = rec;
-      rec.start();
-      setRecording(true);
-      stopSpeaking();
-    } catch (err: any) {
-      setError("Microfone: " + (err?.message || "sem permissão"));
     }
   }
 
@@ -321,7 +242,16 @@ export default function HolidayChat() {
   const hasBriefingToday = messages.some(
     (m) => m.role === "briefing" && new Date(m.created_at).toLocaleDateString("en-CA") === todayKey
   );
-  const busy = !!thinking || recording;
+  const talking = conv !== "off";
+  const busy = !!thinking && !talking;
+  const CONV_LABEL: Record<ConvState, string> = {
+    off: "",
+    starting: "a ligar o microfone…",
+    listening: "a ouvir — fala quando quiseres",
+    hearing: "estou a ouvir-te…",
+    thinking: "a pensar…",
+    speaking: "a falar — podes interromper",
+  };
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", border: "1px solid rgba(255,255,255,0.08)", background: "#14161B", borderRadius: 6, overflow: "hidden" }}>
@@ -498,10 +428,22 @@ export default function HolidayChat() {
           );
         })}
 
-        {thinking && <div style={{ alignSelf: "flex-start", font: mono(500, 12), color: "rgba(244,244,242,0.4)" }}>{thinking}</div>}
+        {thinking && !talking && <div style={{ alignSelf: "flex-start", font: mono(500, 12), color: "rgba(244,244,242,0.4)" }}>{thinking}</div>}
         {error && <div style={{ font: mono(500, 11.5), color: "#FF5F5F" }}>{error}</div>}
       </div>
 
+      {talking && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderTop: "1px solid rgba(255,255,255,0.08)", background: "rgba(61,220,132,0.05)" }}>
+          <span
+            className={conv === "hearing" || conv === "speaking" ? "animate-pulse" : ""}
+            style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: conv === "hearing" ? "#F54E00" : conv === "speaking" ? "#8B7CF6" : conv === "thinking" ? "#E8B93F" : "#3DDC84" }}
+          />
+          <span style={{ flex: 1, font: mono(600, 11), color: "rgba(244,244,242,0.7)" }}>{CONV_LABEL[conv]}</span>
+          <button onClick={toggleConversation} style={{ font: mono(700, 10), color: "rgba(244,244,242,0.5)", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 3, padding: "3px 8px", cursor: "pointer" }}>
+            TERMINAR
+          </button>
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <label
           title="Foto de uma refeição"
@@ -511,15 +453,14 @@ export default function HolidayChat() {
           <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} disabled={busy} style={{ display: "none" }} />
           <IconCamera className="w-[18px] h-[18px]" />
         </label>
-        {canRecord && (
+        {canTalk && (
           <button
-            onClick={toggleRecording}
-            disabled={!!thinking}
-            title={recording ? "Parar e enviar" : "Falar"}
-            className={recording ? "text-[#FF5F5F]" : "text-white/60 hover:text-accent transition-colors"}
-            style={{ width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: recording ? "1px solid #FF5F5F" : "1px solid rgba(255,255,255,0.14)", background: recording ? "rgba(255,95,95,0.12)" : "transparent", borderRadius: 6, cursor: "pointer", opacity: thinking ? 0.5 : 1 }}
+            onClick={toggleConversation}
+            title={talking ? "Terminar conversa" : "Conversar por voz"}
+            className={talking ? "text-[#FF5F5F]" : "text-white/60 hover:text-accent transition-colors"}
+            style={{ width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: talking ? "1px solid #FF5F5F" : "1px solid rgba(255,255,255,0.14)", background: talking ? "rgba(255,95,95,0.12)" : "transparent", borderRadius: 6, cursor: "pointer" }}
           >
-            {recording ? <IconStop className="w-4 h-4 animate-pulse" /> : <IconMic className="w-[18px] h-[18px]" />}
+            {talking ? <IconStop className="w-4 h-4" /> : <IconMic className="w-[18px] h-[18px]" />}
           </button>
         )}
         <input
@@ -528,8 +469,7 @@ export default function HolidayChat() {
           onKeyDown={(e) => {
             if (e.key === "Enter") send();
           }}
-          placeholder={recording ? "a gravar… carrega no quadrado para enviar" : "Fala com o Holiday…"}
-          disabled={recording}
+          placeholder={talking ? "em conversa por voz — também podes escrever" : "Fala com o Holiday…"}
           style={{ flex: 1, minWidth: 0, background: "#0B0C10", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "10px 12px", color: "#F4F4F2", font: "500 13px Inter,sans-serif", outline: "none" }}
         />
         <button
