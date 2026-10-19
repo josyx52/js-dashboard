@@ -1,7 +1,8 @@
-// No iPhone, os passos so saem da app Saude atraves do atalho "Enviar passos"
+// No iPhone, os passos so saem da app Saude atraves do atalho de passos
 // (Atalhos). O botao Sincronizar abre-o e o atalho volta ao dashboard
 // (x-callback-url), por isso os passos atualizam junto com o sync.
-export const STEPS_SHORTCUT = "Enviar passos";
+// Nome exato do atalho no iPhone (o iOS nao deixou mudar o nome automatico).
+export const STEPS_SHORTCUT = "Get Contents of URL";
 
 export function isIOS() {
   if (typeof navigator === "undefined") return false;
