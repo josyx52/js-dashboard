@@ -30,7 +30,9 @@ function pemToDer(pem: string) {
 export function parseServiceAccount(raw: string | undefined): { client_email: string; private_key: string } | null {
   if (!raw) return null;
   try {
-    const j = JSON.parse(raw);
+    const txt = raw.trim();
+    // Aceita tambem o JSON em base64 (ex: copiado de um gestor de segredos).
+    const j = JSON.parse(txt.startsWith("{") ? txt : atob(txt));
     return j.client_email && j.private_key ? { client_email: j.client_email, private_key: j.private_key } : null;
   } catch {
     return null;
@@ -40,7 +42,11 @@ export function parseServiceAccount(raw: string | undefined): { client_email: st
 export async function serviceAccountToken(raw: string): Promise<{ token: string | null; error?: string }> {
   if (cache && cache.exp > Date.now() + 60_000) return { token: cache.token };
   const sa = parseServiceAccount(raw);
-  if (!sa) return { token: null, error: "o JSON da conta de servico e invalido (cola o ficheiro JSON da chave inteiro)" };
+  if (!sa)
+    return {
+      token: null,
+      error: `o JSON da conta de servico e invalido (recebidos ${raw.length} caracteres; o ficheiro tem ~2300) — envia-o com: Get-Content <ficheiro.json> -Raw | npx wrangler secret put GOOGLE_SA_JSON`,
+    };
   try {
     const now = Math.floor(Date.now() / 1000);
     const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
