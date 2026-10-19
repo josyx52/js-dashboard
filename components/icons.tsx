@@ -62,3 +62,55 @@ export const IconFlask = (props: { className?: string; color?: string }) => (
     <line x1="7" y1="15" x2="17" y2="15" stroke={props.color || "currentColor"} strokeWidth="1.6" />
   </svg>
 );
+
+// ── Holiday (chat) — mesmo traco 1.7 e currentColor dos icones acima ──
+
+export const IconCamera = (props: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={props.className}>
+    <path
+      d="M4 8.5 A1.5 1.5 0 0 1 5.5 7 H8 L9.5 5 H14.5 L16 7 H18.5 A1.5 1.5 0 0 1 20 8.5 V17.5 A1.5 1.5 0 0 1 18.5 19 H5.5 A1.5 1.5 0 0 1 4 17.5 Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinejoin="round"
+    />
+    <circle cx="12" cy="12.8" r="3.3" fill="none" stroke="currentColor" strokeWidth="1.7" />
+  </svg>
+);
+
+export const IconMic = (props: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={props.className}>
+    <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    <path d="M5.5 11 A6.5 6.5 0 0 0 18.5 11" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    <line x1="12" y1="17.5" x2="12" y2="21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+  </svg>
+);
+
+export const IconStop = (props: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={props.className}>
+    <rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor" />
+  </svg>
+);
+
+export const IconSpeaker = (props: { className?: string; muted?: boolean }) => (
+  <svg viewBox="0 0 24 24" className={props.className}>
+    <path d="M4 9.5 H7.5 L12 5.5 V18.5 L7.5 14.5 H4 Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    {props.muted ? (
+      <>
+        <line x1="16" y1="9.5" x2="21" y2="14.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <line x1="21" y1="9.5" x2="16" y2="14.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      </>
+    ) : (
+      <>
+        <path d="M15.5 9 A4 4 0 0 1 15.5 15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M18 6.5 A7.5 7.5 0 0 1 18 17.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      </>
+    )}
+  </svg>
+);
+
+export const IconPlay = (props: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={props.className}>
+    <path d="M8 5.5 L18.5 12 L8 18.5 Z" fill="currentColor" />
+  </svg>
+);

@@ -43,7 +43,7 @@ const AREA_LABEL: Record<string, string> = {
   sistema: "Sistema",
 };
 
-const SYSTEM = `Es o Holiday, o agente pessoal do Sistema JS do Josuel, organizado em 6 pilares
+export const SYSTEM = `Es o Holiday, o agente pessoal do Sistema JS do Josuel, organizado em 6 pilares
 (Deus, Saude, Familia, Estudo, Negocio, Trabalho). Pensas como o Jarvis, em ciclo fechado:
 detetar -> correlacionar -> raciocinar -> resolver.
 
@@ -81,30 +81,46 @@ Regras de acao:
 Responde APENAS com JSON valido neste formato:
 {"analysis": "raciocinio causal curto (para log interno)", "reply": "resposta ao utilizador", "actions": [{"type": "...", "params": {...}, "reason": "porque"}]}`;
 
-function compactSnapshot(s: Snapshot) {
-  const tasks = s.tasks
-    .filter((t) => t.bucket !== "future")
-    .slice(0, 60)
-    .map((t) => ({
-      id: t.id,
-      t: t.title,
-      due: t.due,
-      pilar: t.pillar,
-      estado: t.bucket,
-      rec: t.recurring || undefined,
-      fonte: t.source,
-      dono: t.owner || "por esclarecer",
-      lista: t.list || undefined,
-      nota: t.note ? t.note.slice(-300) : undefined,
-    }));
+// Contexto compacto: o plano gratuito da Groq aceita ~8000 tokens/minuto
+// (pedido + resposta). Vao em detalhe so as tarefas de hoje, as delegadas e
+// as 12 atrasadas mais recentes; o resto vai em contagens por pilar.
+const MAX_OVERDUE = 12;
+
+function compactTask(t: Snapshot["tasks"][number]) {
   return {
-    agora: `${s.today} ${String(s.hour).padStart(2, "0")}h (Lisboa)`,
-    tarefas: tasks,
-    tarefas_futuras: s.tasks.filter((t) => t.bucket === "future").length,
-    refeicoes_hoje: s.meals,
-    peso: s.body,
+    id: t.id,
+    t: t.title.slice(0, 80),
+    due: t.due || undefined,
+    p: t.pillar || undefined,
+    rec: t.recurring || undefined,
+    dono: t.owner || undefined,
+    lista: t.list || undefined,
+    nota: t.owner === "holiday" && t.note ? t.note.slice(-160) : undefined,
+  };
+}
+
+export function compactSnapshot(s: Snapshot) {
+  const today = s.tasks.filter((t) => t.bucket === "today");
+  const overdue = s.tasks
+    .filter((t) => t.bucket === "overdue")
+    .sort((a, b) => (b.due || "").localeCompare(a.due || ""));
+  const holiday = s.tasks.filter((t) => t.owner === "holiday" && t.bucket !== "today");
+  const undated = s.tasks.filter((t) => t.bucket === "undated" && t.owner !== "holiday");
+  const overdueRest: Record<string, number> = {};
+  for (const t of overdue.slice(MAX_OVERDUE)) overdueRest[t.pillar || "?"] = (overdueRest[t.pillar || "?"] || 0) + 1;
+
+  return {
+    agora: `${s.today} ${String(s.hour).padStart(2, "0")}h Lisboa`,
+    hoje: today.map(compactTask),
+    atrasadas: overdue.slice(0, MAX_OVERDUE).map(compactTask),
+    atrasadas_restantes_por_pilar: Object.keys(overdueRest).length ? overdueRest : undefined,
+    delegadas_ao_holiday: holiday.length ? holiday.map(compactTask) : undefined,
+    sem_data: undated.slice(0, 10).map(compactTask),
+    futuras: s.tasks.filter((t) => t.bucket === "future").length,
+    refeicoes_hoje: s.meals.map((m) => `${m.type === "out" ? "treino " : ""}${m.label} ${m.kcal}kcal`),
+    peso: s.body ? `${s.body.weight_kg}kg em ${s.body.date}` : null,
     perfil: s.profile,
-    passos_hoje: s.steps,
+    passos: s.steps,
     ultimo_sync: s.lastSyncAt,
   };
 }
@@ -115,7 +131,7 @@ export function problemsText(problems: Problem[]): string {
     .map(
       (p) =>
         `[${AREA_LABEL[p.area]} · ${p.severity}] ` +
-        p.signals.map((s) => s.title + (s.detail ? ` — ${s.detail}` : "")).join(" | ")
+        p.signals.map((s) => s.title + (s.detail ? ` — ${s.detail.slice(0, 120)}` : "")).join(" | ")
     )
     .join("\n");
 }
@@ -181,26 +197,38 @@ export async function reason(input: {
   const messages = [
     { role: "system", content: SYSTEM },
     { role: "system", content: context },
-    ...input.history.slice(-12).map((h) => ({
+    ...input.history.slice(-8).map((h) => ({
       role: h.role === "user" ? "user" : "assistant",
-      content: h.content,
+      content: h.content.slice(0, 600),
     })),
     { role: "user", content: input.userMessage },
   ];
 
-  try {
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const call = () =>
+    fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: MODEL,
         messages,
         temperature: 0.2,
+        reasoning_effort: "low",
+        max_completion_tokens: 1200,
         response_format: { type: "json_object" },
       }),
     });
+
+  try {
+    let r = await call();
+    // Limite por minuto: a Groq diz quanto esperar — espera (ate 12s) e tenta uma vez.
+    if (r.status === 429) {
+      const wait = Math.min(12, Number(r.headers.get("retry-after")) || 6);
+      await new Promise((res) => setTimeout(res, wait * 1000));
+      r = await call();
+    }
     const j: any = await r.json();
-    if (!r.ok) throw new Error(`Groq HTTP ${r.status}: ${j?.error?.message || ""}`.trim());
+    if (r.status === 429) throw new Error("limite de pedidos da Groq por minuto — tenta daqui a pouco");
+    if (!r.ok) throw new Error(`Groq HTTP ${r.status}: ${String(j?.error?.message || "").slice(0, 160)}`.trim());
 
     let txt: string = j.choices?.[0]?.message?.content?.trim() || "{}";
     txt = txt.replace(/^```json/, "").replace(/^```/, "").replace(/```$/, "").trim();

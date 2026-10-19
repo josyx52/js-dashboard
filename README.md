@@ -34,8 +34,9 @@ Mesma estrutura de pensamento do Jarvis — ciclo fechado detetar → correlacio
      Holiday (`remember`/`forget`) e visíveis/apagáveis no chat;
    - *correlação* — `holiday_daily` (1 linha/dia, atualizada pelo cron): linha de base, padrões por dia da
      semana, correlações entre métricas, tendência de peso e há quantos dias cada problema persiste.
-4. **Raciocínio** (`reasoning.ts`) — Groq (`openai/gpt-oss-120b`) em modo JSON. Circuit breaker: 3 falhas
-   seguidas → 30 s sem IA; nesse caso responde só com as regras.
+4. **Raciocínio** (`reasoning.ts`) — Groq (`openai/gpt-oss-120b`) em modo JSON, contexto compacto (~4k tokens:
+   o plano gratuito aceita 8k/minuto) e uma nova tentativa após 429. Circuit breaker: 3 falhas seguidas → 30 s
+   sem IA; nesse caso responde só com as regras.
 5. **Ações** (`actions.ts`) — catálogo fechado. Risco baixo executa logo (refeição, peso, memória, dono GTD,
    notas de trabalho); risco alto pede aprovação (concluir/criar/reagendar tarefa, evento). Propostas validadas
    contra o snapshot; nada que falhou nas últimas 24 h é repetido.
@@ -45,8 +46,8 @@ Mesma estrutura de pensamento do Jarvis — ciclo fechado detetar → correlacio
 planos, listas), guardado em `gtd_note`.
 
 **Fotos e voz**: o 📷 do chat analisa o prato (Gemini) e regista-o; o 🎤 grava, transcreve com o Whisper da
-Groq (`/api/holiday/transcribe`) e envia. As respostas a mensagens de voz (ou com 🔊 ligado) são lidas em voz
-alta pelo browser.
+Groq (`/api/holiday/transcribe`) e envia. As respostas a mensagens de voz (ou com VOZ ligado) são lidas em
+voz alta com a ElevenLabs (`/api/holiday/speak`) ou, sem chave, com uma voz feminina pt do browser.
 
 **Cron**: de hora a hora, depois do sync, `/api/holiday/briefing` grava o dia no histórico e gera o briefing
 uma vez por dia a partir das 07h (Lisboa).
@@ -71,6 +72,8 @@ uma vez por dia a partir das 07h (Lisboa).
 | `GROQ_API_KEY` | agente + classificação por pilares |
 | `GEMINI_API_KEY` | análise de fotos de refeições |
 | `STEPS_TOKEN` | opcional — `POST /api/steps` manual (ex: Atalhos do iOS) |
+| `ELEVENLABS_API_KEY` | opcional — voz do Holiday (feminina, realista). Sem ela usa a voz do browser |
+| `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | opcional — trocar voz (padrão "Sarah") e modelo (padrão `eleven_multilingual_v2`) |
 
 ## Base de dados
 Migrações em `supabase/migrations/`, aplicadas por ordem no SQL Editor do Supabase.

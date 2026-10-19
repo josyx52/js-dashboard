@@ -10,7 +10,7 @@ export interface RawTask {
 
 // Marca de versao — muda a cada push, para confirmarmos sem ambiguidade
 // se o Cloudflare esta mesmo a servir o codigo mais recente.
-export const DEPLOY_MARKER = "holiday-2";
+export const DEPLOY_MARKER = "holiday-3";
 
 
 // Resultado de uma leitura a um provedor. `ok: false` quando o token falta

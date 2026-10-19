@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { compressImageToBase64 } from "@/lib/image";
+import { IconCamera, IconMic, IconPlay, IconSpeaker, IconStop } from "@/components/icons";
 
 type Severity = "alta" | "media" | "baixa";
 
@@ -70,16 +71,61 @@ function time(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
 }
 
-// Le a resposta em voz alta (voz pt-PT do sistema, se existir).
-function speak(text: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/[*_#`>]/g, ""));
+// Voz do Holiday: ElevenLabs (servidor) quando ha chave; senao, a voz
+// feminina pt do sistema. Um so audio de cada vez.
+let currentAudio: HTMLAudioElement | null = null;
+let elevenAvailable = true; // passa a false se o servidor disser que nao ha chave
+
+const FEMALE_HINTS = /joana|catarina|raquel|fernanda|francisca|luciana|helena|ines|inês|maria|female|feminina|mulher/i;
+
+function stopSpeaking() {
+  currentAudio?.pause();
+  currentAudio = null;
+  if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+}
+
+function browserSpeak(text: string) {
+  if (!("speechSynthesis" in window)) return;
   const voices = window.speechSynthesis.getVoices();
-  u.voice = voices.find((v) => v.lang === "pt-PT") || voices.find((v) => v.lang.startsWith("pt")) || null;
-  u.lang = u.voice?.lang || "pt-PT";
-  u.rate = 1.05;
+  const pt = voices.filter((v) => v.lang.toLowerCase().startsWith("pt"));
+  const voice =
+    pt.find((v) => v.lang === "pt-PT" && FEMALE_HINTS.test(v.name)) ||
+    pt.find((v) => FEMALE_HINTS.test(v.name)) ||
+    pt.find((v) => v.lang === "pt-PT") ||
+    pt[0] ||
+    null;
+  const u = new SpeechSynthesisUtterance(text);
+  u.voice = voice;
+  u.lang = voice?.lang || "pt-PT";
+  u.rate = 1.03;
+  u.pitch = voice && FEMALE_HINTS.test(voice.name) ? 1 : 1.15; // sem voz feminina, aproxima
   window.speechSynthesis.speak(u);
+}
+
+async function speak(text: string) {
+  stopSpeaking();
+  const clean = text.replace(/[*_#`>]/g, "");
+  if (elevenAvailable) {
+    try {
+      const res = await fetch("/api/holiday/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean }),
+      });
+      if (res.ok) {
+        const url = URL.createObjectURL(await res.blob());
+        const audio = new Audio(url);
+        audio.onended = () => URL.revokeObjectURL(url);
+        currentAudio = audio;
+        await audio.play();
+        return;
+      }
+      if (res.status === 501) elevenAvailable = false;
+    } catch {
+      // cai para a voz do browser
+    }
+  }
+  browserSpeak(clean);
 }
 
 function pickMime(): string | undefined {
@@ -141,7 +187,7 @@ export default function HolidayChat() {
   function toggleVoice() {
     const v = !voiceOn;
     setVoiceOn(v);
-    if (!v && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    if (!v) stopSpeaking();
     try {
       localStorage.setItem("holiday_voice", v ? "1" : "0");
     } catch {}
@@ -228,7 +274,7 @@ export default function HolidayChat() {
       recRef.current = rec;
       rec.start();
       setRecording(true);
-      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      stopSpeaking();
     } catch (err: any) {
       setError("Microfone: " + (err?.message || "sem permissão"));
     }
@@ -301,7 +347,8 @@ export default function HolidayChat() {
             MEMÓRIA · {memories.length}
           </button>
           <button onClick={toggleVoice} title="Ler as respostas em voz alta" style={chip(voiceOn ? "#3DDC84" : "rgba(244,244,242,0.5)", voiceOn)}>
-            {voiceOn ? "🔊 VOZ" : "🔇 VOZ"}
+            <IconSpeaker className="w-3.5 h-3.5" muted={!voiceOn} />
+            VOZ
           </button>
           {!hasBriefingToday && loaded && (
             <button onClick={briefing} disabled={busy} style={{ ...chip("#E8B93F"), opacity: busy ? 0.5 : 1 }}>
@@ -369,8 +416,8 @@ export default function HolidayChat() {
         {loaded && messages.length === 0 && (
           <div style={{ font: "500 13px Inter,sans-serif", color: "rgba(244,244,242,0.45)", lineHeight: 1.55 }}>
             Olá, sou o Holiday. Penso como o Jarvis: vejo as tuas tarefas, rotina, refeições e peso, comparo com o teu
-            histórico, lembro-me do que me dizes e procuro a causa do que está a falhar. Podes escrever, falar 🎤 ou
-            mandar a foto de um prato 📷. Diz-me que tarefas ficam contigo e quais queres que eu faça.
+            histórico, lembro-me do que me dizes e procuro a causa do que está a falhar. Podes escrever, falar comigo
+            pelo microfone ou mandar a foto de um prato. Diz-me que tarefas ficam contigo e quais queres que eu faça.
           </div>
         )}
 
@@ -391,15 +438,23 @@ export default function HolidayChat() {
                   border: mine ? "1px solid transparent" : m.role === "briefing" ? "1px solid rgba(232,185,63,0.3)" : "1px solid rgba(255,255,255,0.08)",
                 }}
               >
-                {m.content}
+                {m.content.startsWith("📷") ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <IconCamera className="w-4 h-4 flex-none" />
+                    {m.content.slice(2).trim() || "foto"}
+                  </span>
+                ) : (
+                  m.content
+                )}
               </div>
               {!mine && (
                 <button
                   onClick={() => speak(m.content)}
                   title="Ouvir"
-                  style={{ alignSelf: "flex-start", background: "transparent", border: "none", padding: 0, cursor: "pointer", font: mono(600, 10), color: "rgba(244,244,242,0.3)" }}
+                  style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "none", padding: 0, cursor: "pointer", font: mono(600, 10), color: "rgba(244,244,242,0.3)" }}
                 >
-                  ▶ ouvir
+                  <IconPlay className="w-2.5 h-2.5" />
+                  ouvir
                 </button>
               )}
 
@@ -450,19 +505,21 @@ export default function HolidayChat() {
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <label
           title="Foto de uma refeição"
-          style={{ width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 6, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, fontSize: 17 }}
+          className="text-white/60 hover:text-accent hover:border-accent transition-colors"
+          style={{ width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 6, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}
         >
           <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} disabled={busy} style={{ display: "none" }} />
-          📷
+          <IconCamera className="w-[18px] h-[18px]" />
         </label>
         {canRecord && (
           <button
             onClick={toggleRecording}
             disabled={!!thinking}
             title={recording ? "Parar e enviar" : "Falar"}
-            style={{ width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: recording ? "1px solid #FF5F5F" : "1px solid rgba(255,255,255,0.14)", background: recording ? "rgba(255,95,95,0.15)" : "transparent", borderRadius: 6, cursor: "pointer", fontSize: 17, opacity: thinking ? 0.5 : 1 }}
+            className={recording ? "text-[#FF5F5F]" : "text-white/60 hover:text-accent transition-colors"}
+            style={{ width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: recording ? "1px solid #FF5F5F" : "1px solid rgba(255,255,255,0.14)", background: recording ? "rgba(255,95,95,0.12)" : "transparent", borderRadius: 6, cursor: "pointer", opacity: thinking ? 0.5 : 1 }}
           >
-            {recording ? "⏹" : "🎤"}
+            {recording ? <IconStop className="w-4 h-4 animate-pulse" /> : <IconMic className="w-[18px] h-[18px]" />}
           </button>
         )}
         <input
@@ -471,7 +528,7 @@ export default function HolidayChat() {
           onKeyDown={(e) => {
             if (e.key === "Enter") send();
           }}
-          placeholder={recording ? "a gravar… carrega ⏹ para enviar" : "Fala com o Holiday…"}
+          placeholder={recording ? "a gravar… carrega no quadrado para enviar" : "Fala com o Holiday…"}
           disabled={recording}
           style={{ flex: 1, minWidth: 0, background: "#0B0C10", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "10px 12px", color: "#F4F4F2", font: "500 13px Inter,sans-serif", outline: "none" }}
         />
