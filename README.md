@@ -110,7 +110,7 @@ briefing a partir das 07h); o sync de tarefas só na primeira volta de cada hora
 | `TODOIST_API_TOKEN`, `TICKTICK_ACCESS_TOKEN` | tarefas |
 | `GOOGLE_SA_JSON` (ou `GOOGLE_SERVICE_ACCOUNT_JSON`), `GOOGLE_CALENDAR_ID` | Google Calendar (recomendado): chave JSON de uma conta de serviço + o teu email; o calendário é partilhado com o email da conta de serviço. Não expira nem precisa de app publicada |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | Google Calendar por OAuth (alternativa; em modo Testing o token expira em 7 dias) e base do Google Health |
-| `STEPS_TOKEN` | passos: um atalho do iPhone (app Atalhos) lê a app Saúde e faz `POST /api/steps` com o header `X-Steps-Token` e `{"steps": N}` — fonte principal, não expira |
+| `STEPS_TOKEN` | passos (no iPhone, o botão Sincronizar corre também o atalho **"Enviar passos"** e volta ao dashboard): um atalho do iPhone (app Atalhos) lê a app Saúde e faz `POST /api/steps` com o header `X-Steps-Token` e `{"steps": N}` — fonte principal, não expira |
 | `GOOGLE_HEALTH_REFRESH_TOKEN` | passos pelo Google Health (alternativa; o token OAuth expira em modo Testing) |
 | `GROQ_API_KEY` | agente + classificação por pilares |
 | `GEMINI_API_KEY` | análise de fotos de refeições |

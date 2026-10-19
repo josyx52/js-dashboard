@@ -6,6 +6,7 @@ import { PILLAR_STACK_ORDER, TaskCache } from "@/lib/types";
 import type { Overview } from "@/lib/overview";
 import { Badge, Button, Card, ColorDot, EmptyState, Page, PageHeader, Segmented, Skeleton, useToast } from "@/components/ui";
 import { TaskBoard } from "@/components/TaskBoard";
+import { STEPS_SHORTCUT, isIOS, stepsShortcutUrl } from "@/lib/ios-steps";
 import { AreaChart, BarList, CategoryColumns, ColumnChart, HabitGrid, Meter, SegmentBar, Sparkline, StackedColumns, VIZ, compact, shortDay } from "@/components/charts";
 import { cn } from "@/lib/cn";
 
@@ -123,6 +124,16 @@ export default function DashboardPage() {
     load(range);
   }, [load, range]);
 
+  // Regresso do atalho "Enviar passos" (x-callback-url).
+  useEffect(() => {
+    const r = new URLSearchParams(window.location.search).get("passos");
+    if (!r) return;
+    if (r === "ok") toast.success("Passos atualizados", "Enviados pelo iPhone");
+    else toast.error("O atalho dos passos falhou", `Confirma nos Atalhos que existe um atalho chamado "${STEPS_SHORTCUT}".`);
+    window.history.replaceState(null, "", window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function sync() {
     setSyncing(true);
     try {
@@ -133,6 +144,8 @@ export default function DashboardPage() {
       if (errors.length) toast.error("Sincronizado com erros", `${detail}. ${errors.join(" | ")}`);
       else toast.success("Sincronizado", detail);
       await load(range);
+      // iPhone: os passos vem da app Saude pelo atalho — corre-o a seguir ao sync.
+      if (isIOS()) window.location.href = stepsShortcutUrl(window.location.origin + window.location.pathname);
     } catch (e: any) {
       toast.error("Falhou a sincronização", e.message);
     } finally {
