@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Integration } from "@/lib/types";
+import VoicePicker from "@/components/VoicePicker";
 
 interface Service {
   key: string;
@@ -255,6 +256,8 @@ export default function IntegracoesPage() {
           </>
         )}
       </div>
+
+      <VoicePicker />
 
       {/* Outras */}
       <div style={card}>

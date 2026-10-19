@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
-import { listAutomations, occurrences, SYSTEM_AUTOMATIONS } from "@/lib/holiday/automations";
+import { EVENTS, isEvent, listAutomations, occurrences, SYSTEM_AUTOMATIONS } from "@/lib/holiday/automations";
 import { parseAutomationInput } from "@/lib/holiday/automation-input";
 import { addDays } from "@/lib/dates";
 
@@ -23,8 +23,9 @@ export async function GET(req: NextRequest) {
     const { data: runs } = await sb
       .from("holiday_automation_runs")
       .select("automation_id, scheduled_for, ran_at, status, result")
-      .gte("scheduled_for", occ[0]?.at || `${from}T00:00:00Z`)
+      .gte("scheduled_for", `${addDays(from, -1)}T00:00:00Z`)
       .lte("scheduled_for", `${addDays(to, 1)}T00:00:00Z`);
+    const eventIds = new Set(automations.filter(isEvent).map((a) => a.id));
     const runKey = (id: string, at: string) => `${id}|${new Date(at).toISOString()}`;
     const byKey = new Map((runs || []).map((r) => [runKey(r.automation_id, r.scheduled_for), r]));
 
@@ -37,6 +38,17 @@ export async function GET(req: NextRequest) {
         at: o.at,
         run: byKey.get(runKey(o.automation.id, o.at)) || null,
       })),
+      // Disparos por evento (aparecem no dia em que aconteceram).
+      eventRuns: (runs || [])
+        .filter((r) => eventIds.has(r.automation_id))
+        .map((r) => ({
+          automation_id: r.automation_id,
+          at: r.scheduled_for,
+          date: new Date(r.scheduled_for).toLocaleDateString("en-CA", { timeZone: "Europe/Lisbon" }),
+          run: { status: r.status, result: r.result, ran_at: r.ran_at },
+        }))
+        .filter((r) => r.date >= from && r.date <= to),
+      events: Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [k, v.label])),
       system: SYSTEM_AUTOMATIONS,
     });
   } catch (e: any) {

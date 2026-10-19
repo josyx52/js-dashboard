@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseServer } from "@/lib/supabase-server";
+import { DEFAULT_VOICE, getSetting, type VoiceSetting } from "@/lib/settings";
 
 export const runtime = "nodejs";
 
@@ -6,9 +8,9 @@ export const runtime = "nodejs";
 // browser comecar a tocar enquanto o audio ainda chega (streaming) — menos
 // espera numa conversa. Sem ELEVENLABS_API_KEY devolve 501 e o browser usa
 // a voz do sistema. ELEVENLABS_VOICE_ID / ELEVENLABS_MODEL trocam voz e modelo.
-const DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"; // "Sarah" — voz feminina pre-feita
-const DEFAULT_MODEL = "eleven_multilingual_v2"; // mais natural
-const FAST_MODEL = "eleven_flash_v2_5"; // menor latencia, usado no modo conversa
+// A voz e a qualidade escolhem-se em Integracoes (app_settings "tts_voice").
+const NATURAL_MODEL = "eleven_multilingual_v2"; // mais humano
+const FAST_MODEL = "eleven_flash_v2_5"; // menor latencia
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,10 +19,11 @@ export async function GET(req: NextRequest) {
 
     const text = (req.nextUrl.searchParams.get("text") || "").replace(/[*_#`>]/g, "").trim().slice(0, 2000);
     if (!text) return NextResponse.json({ error: "texto obrigatorio" }, { status: 400 });
-    const fast = req.nextUrl.searchParams.get("fast") === "1";
-
-    const voice = process.env.ELEVENLABS_VOICE_ID || DEFAULT_VOICE;
-    const model = fast ? FAST_MODEL : process.env.ELEVENLABS_MODEL || DEFAULT_MODEL;
+    const setting = { ...DEFAULT_VOICE, ...((await getSetting<VoiceSetting>(supabaseServer(), "tts_voice").catch(() => null)) || {}) };
+    const voice = setting.voice_id !== DEFAULT_VOICE.voice_id ? setting.voice_id : process.env.ELEVENLABS_VOICE_ID || setting.voice_id;
+    // Na conversa usa o modelo escolhido; "rapida" troca naturalidade por menos espera.
+    const fast = req.nextUrl.searchParams.get("fast") === "1" && setting.quality === "rapida";
+    const model = fast ? FAST_MODEL : process.env.ELEVENLABS_MODEL || NATURAL_MODEL;
     const r = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voice}/stream?output_format=mp3_44100_128&optimize_streaming_latency=${fast ? 3 : 0}`,
       {
@@ -30,7 +33,8 @@ export async function GET(req: NextRequest) {
           text,
           model_id: model,
           language_code: model === FAST_MODEL ? "pt" : undefined,
-          voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
+          // Menos estabilidade + algum estilo = entoacao mais viva, menos "leitura".
+          voice_settings: { stability: 0.38, similarity_boost: 0.78, style: 0.3, use_speaker_boost: true },
         }),
       }
     );

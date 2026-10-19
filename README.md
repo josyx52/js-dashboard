@@ -61,10 +61,18 @@ Holiday interrompe-o. No modo voz as respostas são curtas e naturais (1–3 fra
 o resultado volta ao raciocínio na mesma resposta) e cria páginas com o seu trabalho (`notion_create_page`, com
 aprovação) na página de destino escolhida em Integrações.
 
-**Automações** (`lib/holiday/automations.ts`, `holiday_automations`): atividades agendadas por dias da semana e hora
-(Lisboa, passos de 15 min). *Lembrete* publica a mensagem no chat; *análise* e *trabalho* correm o ciclo completo do
-Holiday. Criadas na página `/automacoes` ou pelo próprio Holiday no chat (`create_automation`/`set_automation`).
-Cada execução fica em `holiday_automation_runs`; se o ciclo atrasar mais de 2 h, fica "perdida".
+**Automações** (`lib/holiday/automations.ts`, `holiday_automations`), como no Jarvis (Lachesis + SolutionEngine):
+- *por horário* — dias da semana + hora (Lisboa, passos de 15 min);
+- *por evento* — disparam quando as regras detetam uma situação (sem refeições, atrasadas, atrasadas graves, rotina
+  por fazer, défice fora da meta, peso antigo, sync parado, delegadas sem trabalho, por esclarecer, duplicados),
+  nos dias marcados, a partir de uma hora, no máximo 1x por intervalo (cooldown).
+*Lembrete* publica a mensagem; *análise* e *trabalho* correm o ciclo completo (risco baixo executa, alto pede
+aprovação). Criadas em `/automacoes` ou pelo Holiday no chat. Cada execução fica em `holiday_automation_runs`.
+
+**Voz**: conversa contínua com detetor de voz exigente (ignora TV/vozes distantes; o Holiday ainda descarta frases
+que não são para ele), respostas naturais e curtas, aprovação de cartões por voz ("sim, aprova"), nova tentativa
+em falhas de rede. A voz (vozes femininas portuguesas da ElevenLabs) e a qualidade (natural/rápida) escolhem-se
+em Integrações (`app_settings.tts_voice`).
 
 **Cron** (`*/15 * * * *`): de 15 em 15 min corre `/api/holiday/briefing` (histórico do dia, automações devidas e o
 briefing a partir das 07h); o sync de tarefas só na primeira volta de cada hora.
@@ -97,7 +105,7 @@ Migrações em `supabase/migrations/`, aplicadas por ordem no SQL Editor do Supa
 - `0009` — `daily_steps`, `sync_state`, remove a coluna legada `api_key_encrypted`,
   e não deixa criar integrações com nomes repetidos.
 - `0011` — coluna `recurring` em `tasks_cache`; `0012` — tabelas do Holiday; `0013` — memória, histórico
-  diário e campos GTD; `0014` — automações; `0015` — configuração por integração.
+  diário e campos GTD; `0014` — automações; `0015` — configuração por integração; `0016` — definições da app; `0017` — automações por evento.
 - `0010` — fecha o RLS (policies só para `service_role`). Já aplicada; a versão
   antiga lia a BD diretamente no browser e deixa de funcionar.
 

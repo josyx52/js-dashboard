@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { completeTask } from "@/lib/tasks";
 import { addCalendarEvent, createTodoistTask, rescheduleTodoistTask } from "@/lib/integrations";
 import type { Snapshot } from "./snapshot";
-import { normalizeDays, normalizeTime } from "./automations";
+import { EVENTS, normalizeDays, normalizeTime } from "./automations";
 import { notionCreatePage, notionSearch, notionToken } from "@/lib/connectors";
 
 // Etapa 5 do ciclo (SolutionEngine do Jarvis): catalogo fechado de acoes.
@@ -24,7 +24,9 @@ export type ActionType =
   | "create_automation"
   | "set_automation"
   | "notion_search"
-  | "notion_create_page";
+  | "notion_create_page"
+  | "approve_pending"
+  | "reject_pending";
 
 export interface ActionSpec {
   risk: "low" | "high";
@@ -55,11 +57,16 @@ export const ACTIONS: Record<ActionType, ActionSpec> = {
   // Agendar atividade do proprio Holiday; o que ela fizer de risco alto continua a pedir aprovacao.
   create_automation: {
     risk: "low",
-    params: '{"name": string curta, "kind": "lembrete"|"analise"|"trabalho", "prompt": string (mensagem ou o que fazer), "days": [0-6], "time": "HH:MM"}',
+    params:
+      '{"name": string curta, "kind": "lembrete"|"analise"|"trabalho", "prompt": string (mensagem ou o que fazer), "days": [0-6], "time": "HH:MM", ' +
+      '"trigger"?: "horario"|"evento", "event"?: um dos EVENTOS, "cooldown_hours"?: 4|12|24|48} — com trigger "evento", time e a hora a partir da qual pode disparar',
   },
   set_automation: { risk: "low", params: '{"automation_id": string, "active": boolean}' },
   // Notion: pesquisar e so leitura (o resultado volta ao teu raciocinio); criar pede aprovacao.
   notion_search: { risk: "low", params: '{"query": string}' },
+  // Decidir cartoes A ESPERA DE APROVACAO quando ele confirma/recusa explicitamente.
+  approve_pending: { risk: "low", params: '{"action_ids"?: [ids]} (vazio = todas as que estao a espera)' },
+  reject_pending: { risk: "low", params: '{"action_ids"?: [ids]}' },
   notion_create_page: {
     risk: "high",
     params: '{"title": string, "content": string (texto; linhas "- " viram lista, "# " titulo), "parent_id"?: id de uma pagina dos resultados}',
@@ -205,12 +212,22 @@ export function validateProposal(
       if ((ctx.automations || []).some((x) => x.name.toLowerCase() === name.toLowerCase())) {
         return { ok: false, error: "ja existe uma automacao com esse nome" };
       }
+      const trigger = a.trigger === "evento" ? "evento" : "horario";
+      if (trigger === "evento" && !EVENTS[a.event]) return { ok: false, error: "evento desconhecido" };
+      const cooldown = [1, 2, 4, 8, 12, 24, 48, 72, 168].includes(Number(a.cooldown_hours)) ? Number(a.cooldown_hours) : 24;
       const DAY = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+      const when = days.length === 7 ? "todos os dias" : days.map((d) => DAY[d]).join(", ");
       return {
         ok: true,
         type,
-        params: { name, kind, prompt, days, time },
-        summary: `Nova automação: ${name} — ${days.length === 7 ? "todos os dias" : days.map((d) => DAY[d]).join(", ")} às ${time}`,
+        params:
+          trigger === "evento"
+            ? { name, kind, prompt, days, time, trigger, event: a.event, cooldown_hours: cooldown }
+            : { name, kind, prompt, days, time, trigger },
+        summary:
+          trigger === "evento"
+            ? `Nova automação: ${name} — quando “${EVENTS[a.event].label}” (${when}, a partir das ${time})`
+            : `Nova automação: ${name} — ${when} às ${time}`,
       };
     }
     case "set_automation": {
@@ -219,6 +236,10 @@ export function validateProposal(
       const active = !!a.active;
       return { ok: true, type, params: { automation_id: auto.id, active }, summary: `${active ? "Retomar" : "Pausar"} automação: ${auto.name}` };
     }
+    case "approve_pending":
+    case "reject_pending":
+      // Tratadas no orquestrador (run.ts), com verificacao da confirmacao na frase.
+      return { ok: false, error: "tratada no orquestrador" };
     case "notion_search": {
       if (!ctx.notion?.connected) return { ok: false, error: "Notion nao esta ligado" };
       const query = String(a.query || "").trim().slice(0, 100);
@@ -317,6 +338,9 @@ export async function executeAction(
         .eq("id", params.task_id);
       return error ? { ok: false, result: error.message } : { ok: true, result: "atualizado" };
     }
+    case "approve_pending":
+    case "reject_pending":
+      return { ok: false, result: "tratada no orquestrador" };
     case "notion_search": {
       const { token } = await notionToken(sb);
       if (!token) return { ok: false, result: "Notion não está ligado" };

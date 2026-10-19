@@ -149,20 +149,40 @@ export default function HolidayChat() {
       { id: tempId, role: "user", content: [opts.imageBase64 ? "📷" : "", text].filter(Boolean).join(" "), created_at: new Date().toISOString() },
     ]);
     try {
-      const d = await api<{ message: Message; actions: Action[]; problems: Problem[]; userMessage?: Message }>("/api/holiday", {
-        body: { message: text, imageBase64: opts.imageBase64, voice: !!opts.voice },
+      const call = () =>
+        api<{ message: Message | null; actions: Action[]; problems: Problem[]; userMessage?: Message; ignored?: boolean }>("/api/holiday", {
+          body: { message: text, imageBase64: opts.imageBase64, voice: !!opts.voice },
+        });
+      // Falha de rede (ligacao movel instavel): tenta outra vez uma vez.
+      const d = await call().catch(async (e) => {
+        if (!/fetch|network|load failed|HTTP 5/i.test(String(e?.message))) throw e;
+        await new Promise((r) => setTimeout(r, 1200));
+        return call();
       });
-      setMessages((p) => [...p.map((m) => (m.id === tempId && d.userMessage ? d.userMessage : m)), d.message]);
+      if (d.ignored || !d.message) {
+        // Nao era para o Holiday (conversa de fundo): some do chat, sem resposta.
+        setMessages((p) => p.filter((m) => m.id !== tempId));
+        return null;
+      }
+      const reply = d.message;
+      setMessages((p) => [...p.map((m) => (m.id === tempId && d.userMessage ? d.userMessage : m)), reply]);
       setActions((p) => [...p, ...d.actions]);
       setProblems(d.problems);
       if (d.actions.some((a) => a.status === "executed" && ["remember", "forget", "set_owner", "save_task_note"].includes(a.type))) {
         load(); // memoria / delegadas mudaram
       }
-      if (voiceOn && !opts.voice) speak(d.message.content);
-      return d.message.content;
+      if (voiceOn && !opts.voice) speak(reply.content);
+      return reply.content;
     } catch (e: any) {
+      if (opts.voice) {
+        // Em conversa nao mostra erros tecnicos: pede para repetir, como uma pessoa.
+        setMessages((p) => p.filter((m) => m.id !== tempId));
+        return /limite/i.test(e.message)
+          ? "Dá-me só uns segundos, estou com muitos pedidos. Repete daqui a pouco?"
+          : "Desculpa, a ligação falhou. Podes repetir?";
+      }
       setError(e.message);
-      return opts.voice ? "Desculpa, falhou aqui do meu lado. Podes repetir?" : null;
+      return null;
     } finally {
       setThinking(null);
     }

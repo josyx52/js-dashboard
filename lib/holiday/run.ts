@@ -55,7 +55,7 @@ export async function think(
     | { kind: "chat"; message: string; imageBase64?: string; voice?: boolean }
     | { kind: "briefing" }
     | { kind: "automation"; automation: Automation }
-): Promise<{ message: HolidayMessage; actions: HolidayAction[]; problems: Problem[]; userMessage?: HolidayMessage }> {
+): Promise<{ message: HolidayMessage; actions: HolidayAction[]; problems: Problem[]; userMessage?: HolidayMessage; ignored?: boolean }> {
   const userId = process.env.SYNC_USER_ID;
 
   // Foto de refeicao no chat (a antiga "calculadora"): analisa e regista
@@ -93,11 +93,20 @@ export async function think(
 
   const [{ data: hist }, { data: recent }, memory] = await Promise.all([
     sb.from("holiday_messages").select("role, content").order("created_at", { ascending: false }).limit(12),
-    sb.from("holiday_actions").select("type, params, summary, status, result, created_at").order("created_at", { ascending: false }).limit(15),
+    sb.from("holiday_actions").select("id, type, params, summary, status, result, created_at, decided_at").order("created_at", { ascending: false }).limit(15),
     loadMemory(sb, snapshot, signals),
   ]);
   const history = ((hist || []) as HistoryItem[]).reverse();
-  const recentActions = (recent || []) as (PastAction & { params: Record<string, any>; created_at: string })[];
+  const recentActions = (recent || []) as (PastAction & {
+    id: string;
+    params: Record<string, any>;
+    created_at: string;
+    decided_at: string | null;
+  })[];
+  // Cartoes ainda por decidir (ultimas 2h) — o Holiday ve-os e pode aprova-los por voz.
+  const pending = recentActions.filter(
+    (a) => a.status === "proposed" && !a.decided_at && Date.now() - new Date(a.created_at).getTime() < 2 * 3600000
+  );
 
   let userMessage: HolidayMessage | undefined;
   let userText = "";
@@ -140,7 +149,14 @@ export async function think(
         : BRIEFING_PROMPT,
     integrations: integrationsText,
   };
+  (reasonInput as any).pending = pending.map((a) => `[${a.id}] ${a.summary}`).join("\n");
   let r = await reason(reasonInput);
+
+  // Voz: a frase nao era para o Holiday (TV, outra pessoa) — apaga e fica calado.
+  if (r.ignore && opts.kind === "chat" && opts.voice && !opts.imageBase64) {
+    if (userMessage) await sb.from("holiday_messages").delete().eq("id", userMessage.id);
+    return { message: null, actions: [], problems, userMessage: undefined, ignored: true } as any;
+  }
 
   // Ciclo de ferramentas (1 volta): acoes so de leitura correm ja e o
   // resultado volta ao raciocinio, para a resposta final ja as usar.
@@ -229,6 +245,25 @@ export async function think(
     if (row) actions.push(row as HolidayAction);
   }
 
+  // Aprovar/rejeitar por voz ou texto: so com confirmacao explicita na frase.
+  const said = opts.kind === "chat" ? opts.message.toLowerCase() : "";
+  const confirms = /\b(sim|aprova|aprovo|aprovado|pode|podes|confirmo|confirma|faz isso|avan[çc]a|ok|claro)\b/.test(said);
+  const denies = /\b(n[aã]o|cancela|rejeita|deixa estar|esquece)\b/.test(said);
+  for (const p of r.actions.filter((x) => x.type === "approve_pending" || x.type === "reject_pending")) {
+    const approve = p.type === "approve_pending";
+    if (approve ? !confirms || denies : !denies) continue;
+    const ids: string[] = Array.isArray(p.params?.action_ids) && p.params.action_ids.length ? p.params.action_ids : pending.map((x) => x.id);
+    for (const id of ids.filter((i) => pending.some((x) => x.id === i))) {
+      try {
+        const done = await decideAction(sb, id, approve ? "approve" : "reject");
+        actions.push({ ...done, message_id: msg.id } as HolidayAction);
+      } catch {
+        // ja decidida noutro sitio
+      }
+    }
+  }
+  r = { ...r, actions: r.actions.filter((x) => x.type !== "approve_pending" && x.type !== "reject_pending") };
+
   for (const p of r.actions) {
     const v = validateProposal(p, snapshot, ctx);
     if (!v.ok) continue; // proposta invalida (id inventado, duplicada, etc.) — descartada
@@ -267,7 +302,7 @@ export async function think(
     ? groupProblems(detectSignals(await buildSnapshot(sb)))
     : problems;
 
-  return { message: msg as HolidayMessage, actions, problems: after, userMessage };
+  return { message: msg as HolidayMessage, actions, problems: after, userMessage, ignored: false };
 }
 
 // Aprovar/rejeitar um cartao de acao proposto.

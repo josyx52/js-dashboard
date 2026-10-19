@@ -16,9 +16,10 @@ export interface ConversationHandlers {
 }
 
 const TICK_MS = 50;
-const START_MS = 150; // voz continua para considerar que comecaste a falar
-const END_SILENCE_MS = 1000; // pausa que fecha a frase
-const MIN_VOICE_MS = 350; // menos que isto e ruido (tosse, clique)
+const START_MS = 200; // voz continua para considerar que comecaste a falar
+const END_SILENCE_MS = 850; // pausa que fecha a frase (mais curta = respostas mais rapidas)
+const MIN_VOICE_MS = 500; // menos que isto e ruido (tosse, clique, palavra solta da TV)
+const MIN_VOICED_RATIO = 0.4; // a frase tem de ser maioritariamente voz perto do microfone
 const MAX_UTTERANCE_MS = 30000;
 const IDLE_RESTART_MS = 20000; // reinicia a gravacao em silencio (nao acumular)
 const BARGE_MS = 300; // voz por cima do Holiday para o interromper
@@ -122,8 +123,10 @@ export class Conversation {
     return Math.sqrt(sum / this.buf.length);
   }
 
+  // Exigente de proposito: so a tua voz, perto do microfone, passa. TV e
+  // conversas ao fundo ficam abaixo (e o Holiday ainda filtra o que passar).
   private threshold() {
-    return Math.max(0.012, this.floor * 2.5);
+    return Math.max(0.02, this.floor * 3.2);
   }
 
   // Nova gravacao a correr (comeca antes de falares, para nao cortar o inicio).
@@ -189,7 +192,8 @@ export class Conversation {
           this.silenceMs += TICK_MS;
         }
         if (this.silenceMs >= END_SILENCE_MS || this.uttMs >= MAX_UTTERANCE_MS) {
-          if (this.voiceMs >= MIN_VOICE_MS) this.finishUtterance();
+          const ratio = this.voiceMs / Math.max(1, this.uttMs - this.silenceMs);
+          if (this.voiceMs >= MIN_VOICE_MS && ratio >= MIN_VOICED_RATIO) this.finishUtterance();
           else this.listen();
         }
         break;
@@ -228,7 +232,13 @@ export class Conversation {
 
       const form = new FormData();
       form.append("audio", blob, "voz");
-      const res = await fetch("/api/holiday/transcribe", { method: "POST", body: form });
+      const post = () => fetch("/api/holiday/transcribe", { method: "POST", body: form });
+      // Rede movel instavel: uma nova tentativa antes de desistir.
+      let res = await post().catch(() => null);
+      if (!res || res.status >= 500) {
+        await new Promise((r) => setTimeout(r, 1000));
+        res = await post();
+      }
       if (res.status === 401) {
         window.location.href = "/login?next=/agente";
         return;
@@ -249,8 +259,12 @@ export class Conversation {
         if (!this.alive(gen)) return;
       }
       this.listen();
-    } catch (e: any) {
-      this.h.onError("Voz: " + (e?.message || e));
+    } catch {
+      // Falhou mesmo: diz-lo como uma pessoa e continuar a ouvir.
+      if (!this.alive(gen)) return;
+      this.listen();
+      this.set("speaking");
+      await speak("Desculpa, não percebi. Podes repetir?", { fast: true });
       if (this.alive(gen)) this.listen();
     }
   }

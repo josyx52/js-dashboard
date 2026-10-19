@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dueNow, normalizeDays, normalizeTime, occurrences, type Automation } from "./automations";
+import { dueNow, eventsDue, normalizeDays, normalizeTime, occurrences, type Automation } from "./automations";
 
 const auto = (p: Partial<Automation>): Automation => ({
   id: "a1",
@@ -51,5 +51,28 @@ describe("dueNow", () => {
     const r = dueNow([auto({ time: "09:00" })], now);
     expect(r.run).toHaveLength(0);
     expect(r.missed).toHaveLength(1);
+  });
+});
+
+describe("eventsDue (automacoes por evento)", () => {
+  const ev = auto({ id: "e1", trigger: "evento", event: "meals:none", time: "14:00", days: [0, 1, 2, 3, 4, 5, 6], cooldown_hours: 24 });
+  const sig = [{ id: "meals:none", area: "saude" as const, severity: "media" as const, title: "Nenhuma refeição registada hoje" }];
+  const at = new Date("2026-10-19T14:30:00Z"); // 15:30 Lisboa
+
+  it("dispara quando o sinal existe, dentro da janela", () => {
+    expect(eventsDue([ev], sig, at).map((x) => x.automation.id)).toEqual(["e1"]);
+  });
+  it("nao dispara sem o sinal, antes da hora, ou dentro do cooldown", () => {
+    expect(eventsDue([ev], [], at)).toHaveLength(0);
+    expect(eventsDue([ev], sig, new Date("2026-10-19T11:00:00Z"))).toHaveLength(0);
+    expect(eventsDue([{ ...ev, last_run_at: "2026-10-19T13:30:00Z" }], sig, at)).toHaveLength(0);
+  });
+  it("eventos nao aparecem como ocorrencias de horario", () => {
+    expect(occurrences([ev], "2026-10-19", "2026-10-25")).toHaveLength(0);
+  });
+  it("overdue_old so com atrasadas graves", () => {
+    const old = { ...ev, event: "overdue_old" };
+    expect(eventsDue([old], [{ id: "overdue:estudo", area: "estudo" as const, severity: "media" as const, title: "x" }], at)).toHaveLength(0);
+    expect(eventsDue([old], [{ id: "overdue:estudo", area: "estudo" as const, severity: "alta" as const, title: "x" }], at)).toHaveLength(1);
   });
 });

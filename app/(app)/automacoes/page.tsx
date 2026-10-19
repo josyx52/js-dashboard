@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { addDays, localDateKey } from "@/lib/dates";
 
 type Kind = "lembrete" | "analise" | "trabalho";
-type Filter = "todas" | Kind | "sistema";
+type Filter = "todas" | Kind | "evento" | "sistema";
 
 interface Automation {
   id: string;
@@ -16,6 +16,9 @@ interface Automation {
   active: boolean;
   created_by: "eu" | "holiday";
   last_run_at: string | null;
+  trigger: "horario" | "evento";
+  event: string | null;
+  cooldown_hours: number;
 }
 interface Run {
   status: "ok" | "falhou" | "perdida";
@@ -34,7 +37,8 @@ interface SystemAuto {
   time: string;
 }
 
-const KIND: Record<Kind | "sistema", { label: string; color: string }> = {
+const KIND: Record<Kind | "sistema" | "evento", { label: string; color: string }> = {
+  evento: { label: "Por evento", color: "#E8B93F" },
   lembrete: { label: "Lembrete", color: "#36CFC9" },
   analise: { label: "Análise", color: "#8B7CF6" },
   trabalho: { label: "Trabalho", color: "#F54E00" },
@@ -61,7 +65,19 @@ function daysText(days: number[]) {
   return DAY_ORDER.filter((d) => days.includes(d)).map((d) => DAY_SHORT[d].toLowerCase()).join(", ");
 }
 
-const EMPTY = { id: "", name: "", kind: "lembrete" as Kind, prompt: "", days: [1, 2, 3, 4, 5], time: "09:00" };
+const EMPTY = {
+  id: "",
+  name: "",
+  kind: "lembrete" as Kind,
+  prompt: "",
+  days: [1, 2, 3, 4, 5],
+  time: "09:00",
+  trigger: "horario" as "horario" | "evento",
+  event: "meals:none",
+  cooldown_hours: 24,
+};
+const COOLDOWNS = [1, 4, 12, 24, 48, 168];
+const cooldownText = (h: number) => (h >= 168 ? "1x por semana" : h >= 24 ? `1x a cada ${h / 24} dia${h > 24 ? "s" : ""}` : `1x a cada ${h} h`);
 
 export default function AutomacoesPage() {
   const today = localDateKey();
@@ -69,6 +85,8 @@ export default function AutomacoesPage() {
   const [autos, setAutos] = useState<Automation[]>([]);
   const [occ, setOcc] = useState<Occ[]>([]);
   const [system, setSystem] = useState<SystemAuto[]>([]);
+  const [eventRuns, setEventRuns] = useState<Occ[]>([]);
+  const [events, setEvents] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<Filter>("todas");
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -80,12 +98,14 @@ export default function AutomacoesPage() {
 
   async function load() {
     try {
-      const d = await api<{ automations: Automation[]; occurrences: Occ[]; system: SystemAuto[] }>(
+      const d = await api<{ automations: Automation[]; occurrences: Occ[]; system: SystemAuto[]; eventRuns: Occ[]; events: Record<string, string> }>(
         `/api/automations?from=${weekStart}&to=${addDays(weekStart, 6)}`
       );
       setAutos(d.automations);
       setOcc(d.occurrences);
       setSystem(d.system);
+      setEventRuns(d.eventRuns || []);
+      setEvents(d.events || {});
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -98,8 +118,9 @@ export default function AutomacoesPage() {
 
   const byId = useMemo(() => new Map(autos.map((a) => [a.id, a])), [autos]);
   const q = query.trim().toLowerCase();
-  const matches = (name: string, kind: Kind | "sistema") =>
-    (filter === "todas" || filter === kind) && (!q || name.toLowerCase().includes(q));
+  const matches = (name: string, kind: Kind | "sistema", isEv = false) =>
+    (filter === "todas" || filter === kind || (filter === "evento" && isEv)) && (!q || name.toLowerCase().includes(q));
+  const matchA = (a: Automation) => matches(a.name, a.kind, a.trigger === "evento");
 
   const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const nowIso = new Date().toISOString();
@@ -109,7 +130,16 @@ export default function AutomacoesPage() {
     if (!editing) return;
     setSaving(true);
     try {
-      const body = { name: editing.name, kind: editing.kind, prompt: editing.prompt, days: editing.days, time: editing.time };
+      const body = {
+        name: editing.name,
+        kind: editing.kind,
+        prompt: editing.prompt,
+        days: editing.days,
+        time: editing.time,
+        trigger: editing.trigger,
+        event: editing.event,
+        cooldown_hours: editing.cooldown_hours,
+      };
       if (editing.id) await api(`/api/automations/${editing.id}`, { method: "PATCH", body });
       else await api("/api/automations", { body });
       setEditing(null);
@@ -208,7 +238,7 @@ export default function AutomacoesPage() {
             <button onClick={() => setWeekStart(mondayOf(today))} style={{ ...chip(false, "#F54E00"), marginLeft: 4 }}>HOJE</button>
           )}
         </div>
-        {(["todas", "lembrete", "analise", "trabalho", "sistema"] as Filter[]).map((f) => (
+        {(["todas", "lembrete", "analise", "trabalho", "evento", "sistema"] as Filter[]).map((f) => (
           <button key={f} onClick={() => setFilter(f)} style={chip(filter === f, f === "todas" ? "#F4F4F2" : KIND[f].color)}>
             {f === "todas" ? "Todas" : KIND[f].label}
           </button>
@@ -237,14 +267,42 @@ export default function AutomacoesPage() {
         </div>
       )}
 
+      {/* Por evento (como no Jarvis: disparam quando o Holiday deteta a situacao) */}
+      {autos.some((a) => a.trigger === "evento" && matchA(a)) && (
+        <div style={{ ...card, padding: "12px 16px" }} className="flex flex-col gap-2">
+          <span style={{ font: mono(600, 10), letterSpacing: "0.06em", color: "rgba(244,244,242,0.4)" }}>POR EVENTO — disparam quando o Holiday deteta a situação</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {autos
+              .filter((a) => a.trigger === "evento" && matchA(a))
+              .map((a) => (
+                <div key={a.id} style={{ padding: "8px 10px", borderRadius: 4, background: "rgba(255,255,255,0.03)", boxShadow: `inset 2px 0 0 ${KIND.evento.color}`, opacity: a.active ? 1 : 0.5 }}>
+                  <div className="flex items-center gap-2">
+                    <span style={{ font: "600 12.5px Inter,sans-serif" }}>{a.name}</span>
+                    <span style={{ font: mono(600, 9.5), color: KIND[a.kind].color }}>{KIND[a.kind].label.toUpperCase()}</span>
+                    {!a.active && <span style={{ font: mono(700, 9), color: "rgba(244,244,242,0.4)", marginLeft: "auto" }}>PAUSADA</span>}
+                  </div>
+                  <div style={{ font: "500 11.5px Inter,sans-serif", color: "rgba(244,244,242,0.6)", marginTop: 2 }}>
+                    Quando: {events[a.event || ""] || a.event}
+                  </div>
+                  <div style={{ font: mono(500, 10), color: "rgba(244,244,242,0.4)", marginTop: 2 }}>
+                    {daysText(a.days)} · a partir das {a.time} · {cooldownText(a.cooldown_hours)}
+                    {a.last_run_at && ` · último: ${new Date(a.last_run_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Agenda da semana */}
       <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
         {week.map((date) => {
           const isToday = date === today;
-          const items = occ
+          const items = [...occ, ...eventRuns]
             .filter((o) => o.date === date)
+            .sort((x, y) => x.at.localeCompare(y.at))
             .map((o) => ({ o, a: byId.get(o.automation_id)! }))
-            .filter(({ a }) => a && matches(a.name, a.kind));
+            .filter(({ a }) => a && matchA(a));
           const briefing = matches("Briefing do dia", "sistema") && (filter === "todas" || filter === "sistema");
           return (
             <div key={date} style={{ ...card, borderColor: isToday ? "rgba(245,78,0,0.45)" : "rgba(255,255,255,0.08)", minHeight: 120 }} className="flex flex-col">
@@ -275,7 +333,10 @@ export default function AutomacoesPage() {
                         <span style={{ marginLeft: "auto", font: mono(700, 8.5), color: st.color }}>{st.label}</span>
                       </div>
                       <div style={{ font: "600 11.5px Inter,sans-serif", color: "#F4F4F2", marginTop: 2, lineHeight: 1.3 }}>{a.name}</div>
-                      <div style={{ font: mono(500, 9.5), color: KIND[a.kind].color, marginTop: 2 }}>{KIND[a.kind].label.toUpperCase()}</div>
+                      <div style={{ font: mono(500, 9.5), color: KIND[a.kind].color, marginTop: 2 }}>
+                        {KIND[a.kind].label.toUpperCase()}
+                        {a.trigger === "evento" && <span style={{ color: KIND.evento.color }}> · EVENTO</span>}
+                      </div>
                     </button>
                   );
                 })}
@@ -322,7 +383,7 @@ export default function AutomacoesPage() {
           </div>
         )}
         {autos
-          .filter((a) => matches(a.name, a.kind))
+          .filter((a) => matchA(a))
           .map((a) => (
             <div key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-2" style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)", opacity: a.active ? 1 : 0.55 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: KIND[a.kind].color, flexShrink: 0 }} />
@@ -332,14 +393,30 @@ export default function AutomacoesPage() {
                   {a.created_by === "holiday" && <span style={{ font: mono(600, 9.5), color: "#8B7CF6", marginLeft: 8 }}>CRIADA PELO HOLIDAY</span>}
                 </div>
                 <div style={{ font: mono(500, 11), color: "rgba(244,244,242,0.45)", marginTop: 2 }}>
-                  {KIND[a.kind].label} · {daysText(a.days)} às {a.time}
+                  {a.trigger === "evento"
+                    ? `${KIND[a.kind].label} · quando ${(events[a.event || ""] || a.event || "").toLowerCase()} · ${daysText(a.days)} a partir das ${a.time} · ${cooldownText(a.cooldown_hours)}`
+                    : `${KIND[a.kind].label} · ${daysText(a.days)} às ${a.time}`}
                 </div>
               </div>
               <div className="flex gap-1.5">
                 {[
                   { label: a.active ? "PAUSAR" : "RETOMAR", on: () => toggle(a) },
                   { label: "CORRER JÁ", on: () => runNow(a) },
-                  { label: "EDITAR", on: () => setEditing({ id: a.id, name: a.name, kind: a.kind, prompt: a.prompt, days: a.days, time: a.time }) },
+                  {
+                    label: "EDITAR",
+                    on: () =>
+                      setEditing({
+                        id: a.id,
+                        name: a.name,
+                        kind: a.kind,
+                        prompt: a.prompt,
+                        days: a.days,
+                        time: a.time,
+                        trigger: a.trigger || "horario",
+                        event: a.event || "meals:none",
+                        cooldown_hours: a.cooldown_hours || 24,
+                      }),
+                  },
                   { label: "APAGAR", on: () => remove(a) },
                 ].map((b) => (
                   <button
@@ -369,6 +446,39 @@ export default function AutomacoesPage() {
               className="bg-bg border border-white/10 rounded px-3 py-2 text-[13px] outline-none focus:border-accent"
             />
             <div className="flex gap-1.5">
+              <button type="button" onClick={() => setEditing({ ...editing, trigger: "horario" })} style={chip(editing.trigger === "horario", "#F4F4F2")}>
+                POR HORÁRIO
+              </button>
+              <button type="button" onClick={() => setEditing({ ...editing, trigger: "evento" })} style={chip(editing.trigger === "evento", KIND.evento.color)}>
+                POR EVENTO
+              </button>
+            </div>
+            {editing.trigger === "evento" && (
+              <div className="flex flex-col gap-2">
+                <select
+                  value={editing.event}
+                  onChange={(e) => setEditing({ ...editing, event: e.target.value })}
+                  className="bg-bg border border-white/10 rounded px-2.5 py-2 text-[12.5px] outline-none focus:border-accent"
+                >
+                  {Object.entries(events).map(([k, label]) => (
+                    <option key={k} value={k}>Quando: {label}</option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-2" style={{ font: "500 11.5px Inter,sans-serif", color: "rgba(244,244,242,0.5)" }}>
+                  No máximo
+                  <select
+                    value={editing.cooldown_hours}
+                    onChange={(e) => setEditing({ ...editing, cooldown_hours: Number(e.target.value) })}
+                    className="bg-bg border border-white/10 rounded px-2 py-1 text-[12px] font-mono outline-none focus:border-accent"
+                  >
+                    {COOLDOWNS.map((h) => (
+                      <option key={h} value={h}>{cooldownText(h)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-1.5">
               {(["lembrete", "analise", "trabalho"] as Kind[]).map((k) => (
                 <button key={k} type="button" onClick={() => setEditing({ ...editing, kind: k })} style={chip(editing.kind === k, KIND[k].color)}>
                   {KIND[k].label}
@@ -377,7 +487,7 @@ export default function AutomacoesPage() {
             </div>
             <span style={{ font: "500 11.5px Inter,sans-serif", color: "rgba(244,244,242,0.45)" }}>
               {editing.kind === "lembrete"
-                ? "O Holiday publica esta mensagem no chat à hora marcada."
+                ? `O Holiday publica esta mensagem no chat ${editing.trigger === "evento" ? "quando o evento acontecer" : "à hora marcada"}.`
                 : editing.kind === "analise"
                 ? "O Holiday analisa o teu estado (tarefas, nutrição, histórico) e responde no chat."
                 : "O Holiday trabalha nisto sozinho e deixa o resultado no chat (o que mexer no Todoist/calendário pede aprovação)."}
@@ -403,10 +513,13 @@ export default function AutomacoesPage() {
                   </button>
                 );
               })}
+              {editing.trigger === "evento" && (
+                <span className="ml-auto" style={{ font: "500 11.5px Inter,sans-serif", color: "rgba(244,244,242,0.5)", alignSelf: "center" }}>a partir das</span>
+              )}
               <select
                 value={editing.time}
                 onChange={(e) => setEditing({ ...editing, time: e.target.value })}
-                className="ml-auto bg-bg border border-white/10 rounded px-2 py-1 text-[12px] font-mono outline-none focus:border-accent"
+                className={(editing.trigger === "evento" ? "" : "ml-auto ") + "bg-bg border border-white/10 rounded px-2 py-1 text-[12px] font-mono outline-none focus:border-accent"}
               >
                 {TIMES.map((t) => (
                   <option key={t} value={t}>{t}</option>

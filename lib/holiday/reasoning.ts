@@ -19,6 +19,7 @@ export interface Reasoning {
   analysis: string;
   reply: string;
   actions: Proposal[];
+  ignore?: boolean; // voz: a frase nao era para o Holiday (TV, outras pessoas, ruido)
 }
 
 export interface HistoryItem {
@@ -74,6 +75,9 @@ AUTOMACOES: atividades agendadas que tu fazes sozinho (lembrete = mensagem no ch
 respondes; trabalho = trabalhas numa tarefa). Quando o Josuel pedir algo recorrente ("todas as segundas...",
 "lembra-me todos os dias as 21h..."), cria com create_automation (days: 0=domingo..6=sabado; time HH:MM em passos
 de 15 min). Para pausar/retomar usa set_automation. Nao dupliques automacoes que ja existem.
+Como no Jarvis, tambem podem disparar POR EVENTO (trigger "evento"): quando as regras detetam uma situacao
+("quando eu nao registar refeicoes", "se o sync parar", "quando houver tarefas atrasadas ha muito"). Eventos:
+meals:none, overdue, overdue_old, today, deficit:off, weight:stale, sync:stale, gtd:holiday_backlog, gtd:unclarified, dup.
 
 Regras de raciocinio:
 - Baseia-te SO no SNAPSHOT, PROBLEMAS e MEMORIA fornecidos. Nunca inventes tarefas, ids, numeros ou eventos.
@@ -83,7 +87,11 @@ Regras de raciocinio:
 
 Regras de acao:
 - So podes propor acoes do CATALOGO, com os parametros exatos e ids exatos.
-- Acoes "low" sao executadas logo; as "high" ficam a espera de aprovacao. Diz o que fizeste e o que ficou para aprovar.
+- Acoes "low" sao executadas logo; as "high" ficam a espera de aprovacao.
+- HONESTIDADE: nunca digas que fizeste uma acao "high" (concluir/criar/reagendar tarefa, evento, pagina no Notion).
+  Diz que a deixaste para ele aprovar ("deixei para aprovares", "queres que conclua?"). So afirmas como feito o que e "low".
+- Se ha acoes A ESPERA DE APROVACAO e ele confirma claramente ("sim", "aprova", "pode", "confirmo"), usa approve_pending;
+  se recusa ("nao", "deixa", "cancela"), usa reject_pending. Nunca as aproves sem ele confirmar.
 - No maximo 5 acoes por resposta. Se uma acao falhou antes (ACOES RECENTES), nao a repitas igual.
 - Se o utilizador disser o que comeu/treinou/pesou, regista com register_meal/log_weight (estima as kcal e di-lo).
 
@@ -158,6 +166,7 @@ export function parseReply(raw: string): Reasoning | null {
   for (const c of candidates) {
     try {
       const p = JSON.parse(c);
+      if (p && p.ignore === true) return { analysis: String(p.analysis || "ignorado"), reply: "", actions: [], ignore: true };
       if (p && typeof p.reply === "string" && p.reply.trim()) {
         return {
           analysis: String(p.analysis || ""),
@@ -203,6 +212,7 @@ export async function reason(input: {
   voice?: boolean;
   integrations?: string;
   toolResults?: string;
+  pending?: string;
   userMessage: string;
 }): Promise<Reasoning> {
   const key = process.env.GROQ_API_KEY;
@@ -241,9 +251,15 @@ export async function reason(input: {
     `MEMORIA LONGO PRAZO:\n${longTerm}\n\n` +
     `CORRELACAO:\n${correlation}\n\n` +
     `INTEGRACOES:\n${input.integrations || "(nenhuma extra)"}\n\n` +
+    `A ESPERA DE APROVACAO:\n${input.pending || "(nada)"}\n\n` +
     `AUTOMACOES:\n${
       m.automations.length
-        ? m.automations.map((a) => `- [${a.id}] ${a.name} (${a.kind}) dias ${a.days.join(",")} ${a.time}${a.active ? "" : " PAUSADA"}`).join("\n")
+        ? m.automations
+            .map(
+              (a) =>
+                `- [${a.id}] ${a.name} (${a.kind}) ${a.trigger === "evento" ? `EVENTO ${a.event} a partir das ${a.time}` : a.time} dias ${a.days.join(",")}${a.active ? "" : " PAUSADA"}`
+            )
+            .join("\n")
         : "(nenhuma)"
     }\n\n` +
     `CATALOGO DE ACOES:\n${catalog}\n\n` +
@@ -261,9 +277,17 @@ export async function reason(input: {
           {
             role: "system",
             content:
-              "MODO CONVERSA POR VOZ: estas a falar com ele em tempo real. Responde como uma pessoa numa conversa: " +
-              "1 a 3 frases curtas e naturais, sem listas, sem simbolos, sem ids. Se precisares de detalhe, pergunta se ele quer. " +
-              "A transcricao pode ter erros: interpreta pelo contexto.",
+              "MODO CONVERSA POR VOZ — estas a falar com o Josuel em tempo real, como uma pessoa ao telefone.\n" +
+              "Como falar:\n" +
+              "- Natural e caloroso, portugues de Portugal coloquial (\"claro\", \"olha\", \"ja esta\", \"queres que...?\"). Trata-o por tu.\n" +
+              "- 1 a 3 frases curtas. Sem listas, sem simbolos, sem emojis, sem ids, sem markdown. Numeros e horas por extenso quando soa melhor (\"as nove e meia\").\n" +
+              "- Responde primeiro ao que ele disse (um cumprimento responde-se com um cumprimento); so depois, se fizer sentido, acrescenta UMA coisa util.\n" +
+              "- Nao repitas frases que ja disseste na conversa. Se precisares de detalhe, pergunta.\n" +
+              "- Acaba muitas vezes com uma pergunta curta, para a conversa continuar.\n" +
+              "Transcricao:\n" +
+              "- O texto vem de um microfone aberto e pode ter erros: interpreta pelo contexto.\n" +
+              "- Se a frase claramente NAO e para ti (dialogo de TV/filme, outra pessoa a falar com alguem, frase sem sentido nenhum),\n" +
+              "  responde APENAS {\"ignore\": true} — ficas calado e continuas a ouvir.",
           },
         ]
       : []),

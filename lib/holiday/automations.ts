@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays, dateInTimeZone, weekdayOf, zonedTimeToUtc } from "@/lib/dates";
 import { HOLIDAY_TZ } from "./snapshot";
+import type { Signal } from "./engines";
 
 // Automacoes do Holiday: atividades agendadas que ele faz sozinho.
 // - lembrete: publica a mensagem no chat (sem IA)
@@ -21,6 +22,45 @@ export interface Automation {
   active: boolean;
   created_by: "eu" | "holiday";
   last_run_at: string | null;
+  // "horario": dias + hora. "evento": dispara quando as regras detetam `event`,
+  // nos dias marcados, a partir de `time`, no maximo 1x a cada cooldown_hours.
+  trigger?: "horario" | "evento";
+  event?: string | null;
+  cooldown_hours?: number;
+}
+
+// Eventos que podem disparar automacoes (ligados aos sinais das regras).
+export const EVENTS: Record<string, { label: string; match: (s: Signal) => boolean }> = {
+  "meals:none": { label: "Sem refeições registadas (depois das 14h)", match: (s) => s.id === "meals:none" },
+  overdue: { label: "Há tarefas atrasadas", match: (s) => s.id.startsWith("overdue:") },
+  overdue_old: { label: "Tarefas atrasadas há mais de 14 dias", match: (s) => s.id.startsWith("overdue:") && s.severity === "alta" },
+  today: { label: "Rotina / tarefas de hoje por fazer", match: (s) => s.id.startsWith("today:") },
+  "deficit:off": { label: "Défice calórico fora da meta (à noite)", match: (s) => s.id === "deficit:off" },
+  "weight:stale": { label: "Peso sem registo há mais de 7 dias", match: (s) => s.id === "weight:stale" || s.id === "weight:none" },
+  "sync:stale": { label: "Tarefas desatualizadas (sync parado)", match: (s) => s.id === "sync:stale" || s.id === "sync:never" },
+  "gtd:holiday_backlog": { label: "Tarefas delegadas ao Holiday sem trabalho", match: (s) => s.id === "gtd:holiday_backlog" },
+  "gtd:unclarified": { label: "Tarefas por esclarecer (quem faz?)", match: (s) => s.id === "gtd:unclarified" },
+  dup: { label: "Tarefas duplicadas", match: (s) => s.id.startsWith("dup:") },
+};
+
+export function isEvent(a: Automation) {
+  return a.trigger === "evento" && !!a.event && !!EVENTS[a.event];
+}
+
+// Automacoes por evento que devem disparar agora, com os sinais que as ativam.
+export function eventsDue(autos: Automation[], signals: Signal[], now: Date): { automation: Automation; signals: Signal[] }[] {
+  const today = dateInTimeZone(now, HOLIDAY_TZ);
+  const wd = weekdayOf(today);
+  const out: { automation: Automation; signals: Signal[] }[] = [];
+  for (const a of autos) {
+    if (!a.active || !isEvent(a) || !a.days.includes(wd)) continue;
+    if (now.getTime() < zonedTimeToUtc(today, a.time, HOLIDAY_TZ).getTime()) continue; // ainda antes da janela
+    const cooldown = (a.cooldown_hours || 24) * 3600000;
+    if (a.last_run_at && now.getTime() - new Date(a.last_run_at).getTime() < cooldown) continue;
+    const hit = signals.filter(EVENTS[a.event!].match);
+    if (hit.length) out.push({ automation: a, signals: hit });
+  }
+  return out;
 }
 
 export interface Occurrence {
@@ -65,7 +105,7 @@ export function occurrences(autos: Automation[], from: string, to: string): Occu
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const wd = weekdayOf(d);
     for (const a of autos) {
-      if (!a.days.includes(wd)) continue;
+      if (isEvent(a) || !a.days.includes(wd)) continue;
       out.push({ automation: a, date: d, at: zonedTimeToUtc(d, a.time, HOLIDAY_TZ).toISOString() });
     }
   }
@@ -97,9 +137,11 @@ export async function listAutomations(sb: SupabaseClient): Promise<Automation[]>
 export async function runDueAutomations(
   sb: SupabaseClient,
   think: (a: Automation) => Promise<{ messageId: string; summary: string }>,
-  now = new Date()
-): Promise<{ ran: number; missed: number }> {
-  const { run, missed } = dueNow(await listAutomations(sb), now);
+  now = new Date(),
+  signals: Signal[] = []
+): Promise<{ ran: number; missed: number; events: number }> {
+  const all = await listAutomations(sb);
+  const { run, missed } = dueNow(all, now);
 
   for (const o of missed) {
     await sb.from("holiday_automation_runs").insert({
@@ -157,5 +199,51 @@ export async function runDueAutomations(
     });
     ran += 1;
   }
-  return { ran, missed: missed.length };
+
+  // ── Por evento ──
+  let events = 0;
+  for (const { automation: a, signals: hit } of eventsDue(all, signals, now)) {
+    if (a.kind !== "lembrete" && llmRuns >= 2) continue;
+    const { data: claimed } = await sb
+      .from("holiday_automations")
+      .update({ last_run_at: now.toISOString() })
+      .eq("id", a.id)
+      .or(`last_run_at.is.null,last_run_at.lt.${new Date(now.getTime() - (a.cooldown_hours || 24) * 3600000).toISOString()}`)
+      .select("id");
+    if (!claimed?.length) continue;
+
+    const why = hit.map((h) => h.title + (h.detail ? ` (${h.detail.slice(0, 120)})` : "")).join("; ");
+    let status: "ok" | "falhou" = "ok";
+    let result = "";
+    let messageId: string | null = null;
+    try {
+      if (a.kind === "lembrete") {
+        const { data: msg, error } = await sb
+          .from("holiday_messages")
+          .insert({ role: "briefing", content: a.prompt, automation_id: a.id })
+          .select("id")
+          .single();
+        if (error) throw new Error(error.message);
+        messageId = msg.id;
+        result = `evento: ${why}`;
+      } else {
+        llmRuns += 1;
+        const r = await think({ ...a, prompt: `${a.prompt}\nEVENTO QUE DISPAROU: ${why}` });
+        messageId = r.messageId;
+        result = `evento: ${why} → ${r.summary}`;
+      }
+    } catch (e: any) {
+      status = "falhou";
+      result = e?.message || String(e);
+    }
+    await sb.from("holiday_automation_runs").insert({
+      automation_id: a.id,
+      scheduled_for: now.toISOString(),
+      status,
+      result: result.slice(0, 500),
+      message_id: messageId,
+    });
+    events += 1;
+  }
+  return { ran, missed: missed.length, events };
 }

@@ -22,13 +22,18 @@ export async function POST(req: NextRequest) {
     const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: HOLIDAY_TZ, hour: "2-digit", hour12: false }).format(now)) % 24;
     const force = req.nextUrl.searchParams.get("force") === "1";
 
-    let automations: { ran: number; missed: number } | null = null;
+    let automations: { ran: number; missed: number; events: number } | null = null;
     if (!force) {
-      await cycle(sb);
-      automations = await runDueAutomations(sb, async (a) => {
-        const r = await think(sb, { kind: "automation", automation: a });
-        return { messageId: r.message.id, summary: r.message.content.slice(0, 200) };
-      });
+      const { signals } = await cycle(sb);
+      automations = await runDueAutomations(
+        sb,
+        async (a) => {
+          const r = await think(sb, { kind: "automation", automation: a });
+          return { messageId: r.message.id, summary: r.message.content.slice(0, 200) };
+        },
+        now,
+        signals
+      );
     }
 
     const { data: existing } = await sb.from("holiday_messages").select("id").eq("briefing_date", today).maybeSingle();
