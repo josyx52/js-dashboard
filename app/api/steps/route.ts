@@ -21,7 +21,13 @@ export async function POST(req: NextRequest) {
     const expected = process.env.STEPS_TOKEN?.trim();
     const provided = (req.headers.get("X-Steps-Token") || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "").trim();
     if (!expected || !sameSecret(provided, expected)) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      // Diz o motivo sem revelar a chave (so comprimentos), para acertar o atalho.
+      const hint = !expected
+        ? "o secret STEPS_TOKEN nao esta configurado no Worker"
+        : !provided
+          ? "falta o cabecalho X-Steps-Token"
+          : `a chave enviada (${provided.length} caracteres) nao e igual ao STEPS_TOKEN (${expected.length} caracteres)`;
+      return NextResponse.json({ error: "unauthorized", hint }, { status: 401 });
     }
 
     const body = await req.json().catch(() => ({}));
