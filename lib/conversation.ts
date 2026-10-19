@@ -1,4 +1,5 @@
 import { speak, stopSpeaking, unlockAudio } from "@/lib/speech";
+import { addressedToHoliday } from "@/lib/wake";
 
 // Conversa por voz continua com o Holiday, sem botoes por frase:
 // o microfone fica aberto, um detetor de voz (volume do microfone face ao
@@ -41,8 +42,11 @@ export class Conversation {
   private analyser: AnalyserNode | null = null;
   private buf: Float32Array<ArrayBuffer> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private recorder: MediaRecorder | null = null;
-  private chunks: Blob[] = [];
+  // Cada gravacao tem os seus pedacos: antes eram partilhados e o ultimo pedaco
+  // da gravacao anterior (entregue depois de parar) colava-se ao inicio da
+  // seguinte — o ficheiro ficava invalido ("could not process file").
+  private recorder: { rec: MediaRecorder; chunks: Blob[] } | null = null;
+  private lastReplyAt = 0;
   private floor = 0.01;
   private calibrating = 0;
   private voiceMs = 0;
@@ -67,7 +71,8 @@ export class Conversation {
     unlockAudio();
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        // Sem ganho automatico: amplificava a TV ao fundo ate ao nivel da tua voz.
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
       });
     } catch (e: any) {
       this.set("off");
@@ -82,6 +87,7 @@ export class Conversation {
     src.connect(this.analyser);
     this.buf = new Float32Array(new ArrayBuffer(this.analyser.fftSize * 4));
     this.calibrating = 600;
+    this.lastReplyAt = Date.now(); // a primeira frase logo a seguir a ligar nao precisa do nome
     this.floor = 0.01;
     this.listen();
     this.timer = setInterval(() => this.tick(), TICK_MS);
@@ -134,23 +140,24 @@ export class Conversation {
     this.stopRecorder(true);
     if (!this.stream) return;
     const mime = pickMime();
-    this.chunks = [];
+    const chunks: Blob[] = [];
     const rec = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
     rec.ondataavailable = (ev) => {
-      if (ev.data.size > 0) this.chunks.push(ev.data);
+      if (ev.data.size > 0) chunks.push(ev.data);
     };
     rec.start(250);
-    this.recorder = rec;
+    this.recorder = { rec, chunks };
     this.voiceMs = this.silenceMs = this.uttMs = this.idleMs = this.bargeMs = 0;
     this.set("listening");
   }
 
   private stopRecorder(discard: boolean): Promise<Blob | null> {
-    const rec = this.recorder;
+    const cur = this.recorder;
     this.recorder = null;
-    if (!rec || rec.state === "inactive") return Promise.resolve(null);
+    if (!cur || cur.rec.state === "inactive") return Promise.resolve(null);
+    const { rec, chunks } = cur;
     return new Promise((resolve) => {
-      rec.onstop = () => resolve(discard ? null : new Blob(this.chunks, { type: rec.mimeType || "audio/webm" }));
+      rec.onstop = () => resolve(discard ? null : new Blob(chunks, { type: rec.mimeType || "audio/webm" }));
       rec.stop();
     });
   }
@@ -258,6 +265,9 @@ export class Conversation {
       if (d.error) throw new Error(d.error);
       const text = String(d.text || "").trim();
       if (text.length < 2) return this.listen();
+      // TV / conversas ao fundo: so responde se o chamares pelo nome ou se a
+      // conversa ja estiver em curso. Nem chega a gastar um pedido a IA.
+      if (!addressedToHoliday(text, Date.now() - this.lastReplyAt)) return this.listen();
 
       const reply = await this.h.onUtterance(text);
       if (!this.alive(gen)) return;
@@ -267,6 +277,7 @@ export class Conversation {
         this.set("speaking");
         await speak(reply, { fast: true });
         if (!this.alive(gen)) return;
+        this.lastReplyAt = Date.now();
       }
       this.listen();
     } catch (e: any) {

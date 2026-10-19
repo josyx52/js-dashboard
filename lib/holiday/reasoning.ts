@@ -9,6 +9,9 @@ import type { Memory } from "./memory";
 // seguidas desligam a IA durante 30s; nesse tempo responde-se so com as regras.
 
 const MODEL = "openai/gpt-oss-120b";
+// Cada modelo da Groq tem o seu limite por minuto (plano gratuito): quando o
+// principal esta no limite, a resposta sai de um destes em vez de esperar.
+const FALLBACK_MODELS = ["meta-llama/llama-4-scout-17b-16e-instruct", "llama-3.3-70b-versatile"];
 const COOLDOWN_MS = 30_000;
 const MAX_FAILURES = 3;
 
@@ -190,7 +193,15 @@ export function parseReply(raw: string): Reasoning | null {
 }
 
 // Resposta sem IA (circuit breaker aberto ou erro): so os problemas das regras.
-export function fallbackReply(problems: Problem[], why: string): Reasoning {
+export function fallbackReply(problems: Problem[], why: string, voice = false): Reasoning {
+  if (voice) {
+    // Na conversa por voz nada de listas: uma frase curta, como uma pessoa.
+    return {
+      analysis: `fallback: ${why}`,
+      reply: /limite/i.test(why) ? "Dá-me só uns segundos, estou com muitos pedidos. Repete daqui a pouco?" : "Desculpa, falhou-me agora. Podes repetir?",
+      actions: [],
+    };
+  }
   const top = problems.slice(0, 3).map((p) => `• ${AREA_LABEL[p.area]}: ${p.signals[0].title}`);
   return {
     analysis: `fallback: ${why}`,
@@ -217,7 +228,7 @@ export async function reason(input: {
 }): Promise<Reasoning> {
   const key = process.env.GROQ_API_KEY;
   if (!key) return fallbackReply(input.problems, "GROQ_API_KEY não configurado");
-  if (Date.now() < disabledUntil) return fallbackReply(input.problems, "IA em pausa após falhas seguidas");
+  if (Date.now() < disabledUntil) return fallbackReply(input.problems, "IA em pausa após falhas seguidas", input.voice);
 
   const catalog = Object.entries(ACTIONS)
     .map(([type, spec]) => `- ${type} (risco ${spec.risk}): ${spec.params}`)
@@ -306,15 +317,16 @@ export async function reason(input: {
       : []),
   ];
 
-  const call = () =>
+  const call = (model = MODEL) =>
     fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         messages,
         temperature: 0.2,
-        reasoning_effort: "low",
+        // reasoning_effort so existe nos modelos de raciocinio (gpt-oss).
+        ...(model.startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
         // Sem response_format: o modo JSON estrito da Groq rejeitava respostas
         // (HTTP 400 "Failed to generate JSON"). O JSON e extraido em parseReply.
         max_completion_tokens: 2000,
@@ -323,13 +335,19 @@ export async function reason(input: {
 
   try {
     let r = await call();
-    // Limite por minuto: a Groq diz quanto esperar — espera (ate 12s) e tenta uma vez.
-    if (r.status === 429) {
+    // Limite por minuto do modelo principal: tenta logo os modelos de reserva
+    // (limites separados). So no texto, e sem reserva, espera o que a Groq pede.
+    for (const fb of FALLBACK_MODELS) {
+      if (r.status !== 429) break;
+      r = await call(fb);
+      if (r.status === 404 || r.status === 400) r = new Response(null, { status: 429 }); // modelo retirado: passa ao seguinte
+    }
+    if (r.status === 429 && !input.voice) {
       const wait = Math.min(12, Number(r.headers.get("retry-after")) || 6);
       await new Promise((res) => setTimeout(res, wait * 1000));
       r = await call();
     }
-    const j: any = await r.json();
+    const j: any = await r.json().catch(() => ({}));
     if (r.status === 429) throw new Error("limite de pedidos da Groq por minuto — tenta daqui a pouco");
     if (!r.ok) throw new Error(`Groq HTTP ${r.status}: ${String(j?.error?.message || "").slice(0, 160)}`.trim());
 
@@ -344,6 +362,6 @@ export async function reason(input: {
       failures = 0;
     }
     console.error("holiday reasoning:", e?.message || e); // aparece nos logs do Worker
-    return fallbackReply(input.problems, e?.message || String(e));
+    return fallbackReply(input.problems, e?.message || String(e), input.voice);
   }
 }

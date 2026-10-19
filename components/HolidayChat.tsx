@@ -282,7 +282,7 @@ export default function HolidayChat() {
   const CONV_LABEL: Record<ConvState, string> = {
     off: "",
     starting: "A ligar o microfone…",
-    listening: "A ouvir — fala quando quiseres",
+    listening: "A ouvir — chama-me «Holiday» para começar",
     hearing: "Estou a ouvir-te…",
     thinking: "A pensar…",
     speaking: "A falar — podes interromper",

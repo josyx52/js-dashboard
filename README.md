@@ -85,7 +85,7 @@ aprovação) na página de destino escolhida em Integrações.
 *Lembrete* publica a mensagem; *análise* e *trabalho* correm o ciclo completo (risco baixo executa, alto pede
 aprovação). Criadas em `/automacoes` ou pelo Holiday no chat. Cada execução fica em `holiday_automation_runs`.
 
-**Voz**: conversa contínua com detetor de voz exigente (ignora TV/vozes distantes; o Holiday ainda descarta frases
+**Voz**: com a TV ou outras vozes ao fundo, o Holiday só reage quando o chamas pelo nome ("Holiday", tolerante a erros de transcrição) ou até 20 s depois da última resposta dele (`lib/wake.ts`); o ganho automático do microfone está desligado para não amplificar o fundo. Quando o modelo principal da Groq está no limite por minuto, a resposta sai de um modelo de reserva. Conversa contínua com detetor de voz exigente (ignora TV/vozes distantes; o Holiday ainda descarta frases
 que não são para ele), respostas naturais e curtas, aprovação de cartões por voz ("sim, aprova"), nova tentativa
 em falhas de rede. A voz (vozes femininas portuguesas da ElevenLabs) e a qualidade (natural/rápida) escolhem-se
 em Integrações (`app_settings.tts_voice`).
