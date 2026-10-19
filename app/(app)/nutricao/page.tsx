@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { localDateKey } from "@/lib/dates";
-import { calcBMR } from "@/lib/bmr";
+import { calcBMR, GOAL_TARGET_PCT } from "@/lib/bmr";
 import { compressImageToBase64 } from "@/lib/image";
 import { cn } from "@/lib/cn";
 import { Badge, Button, Card, CardHeader, EmptyState, Input, Label, Modal, Page, PageHeader, Segmented, Select, Skeleton, useToast } from "@/components/ui";
@@ -38,7 +38,6 @@ interface Profile {
 
 // Meta de defice/superavit calorico recomendada por objetivo (percentagem
 // sobre as calorias gastas). Negativo = superavit (comer mais que gasta).
-const GOAL_TARGET_PCT: Record<string, number> = { perder: 15, manter: 0, ganhar: -15 };
 const GOAL_LABEL: Record<string, string> = { perder: "Perder peso", manter: "Manter", ganhar: "Ganhar massa" };
 
 const SOURCE_TONE: Record<string, "accent" | "info" | "violet"> = { foto: "accent", manual: "info", treino: "violet" };

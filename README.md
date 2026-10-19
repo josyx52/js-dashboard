@@ -5,7 +5,10 @@ Sistema pessoal de produtividade — Next.js 15 a correr num Cloudflare Worker
 classificação por pilares, e Gemini para analisar fotos de refeições.
 
 ## Páginas
-- `/dashboard` — 6 pilares, tarefas atrasadas / para hoje / sem data (Todoist + TickTick), sync
+- `/dashboard` — visão geral de todas as áreas (`/api/overview`, `lib/overview.ts`): indicadores com tendência
+  (tarefas concluídas, calorias vs meta, peso, passos), produtividade diária, estado de hoje e GTD, pilares,
+  calorias e macros, peso, atividade do Holiday, próximas automações e agenda; intervalo 7/30/90 dias.
+  Gráficos em SVG próprio (`components/charts.tsx`), paleta validada para o fundo escuro
 - `/nutricao` — refeições (foto ou manual), treinos, passos, défice calórico, peso/IMC, perfil
 - `/integracoes` — estado ao vivo de cada serviço (Todoist, TickTick, Google, Groq, Gemini, ElevenLabs, Notion),
   configuração do Notion e chaves guardadas no Supabase Vault

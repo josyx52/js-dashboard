@@ -1,4 +1,4 @@
-import { calcBMR } from "@/lib/bmr";
+import { calcBMR, GOAL_TARGET_PCT } from "@/lib/bmr";
 import type { Snapshot } from "./snapshot";
 
 // Etapas 2 e 3 do ciclo (EventEngine + ProblemEngine do Jarvis): regras
@@ -25,7 +25,6 @@ export interface Problem {
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { alta: 3, media: 2, baixa: 1 };
-const GOAL_TARGET_PCT: Record<string, number> = { perder: 15, manter: 0, ganhar: -15 };
 
 function daysBetween(a: string, b: string): number {
   return Math.round((new Date(b + "T12:00:00Z").getTime() - new Date(a + "T12:00:00Z").getTime()) / 86400000);

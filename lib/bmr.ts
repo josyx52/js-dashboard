@@ -5,3 +5,6 @@ export function calcBMR(weightKg: number, heightCm: number, age: number, sex: "m
   const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
   return Math.round(sex === "m" ? base + 5 : base - 161);
 }
+
+// Meta de defice (% do gasto) por objetivo. Positivo = comer abaixo do gasto.
+export const GOAL_TARGET_PCT: Record<string, number> = { perder: 15, manter: 0, ganhar: -15 };
