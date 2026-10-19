@@ -161,12 +161,23 @@ export async function servicesStatus(sb: SupabaseClient): Promise<ServiceStatus[
       }
     ),
     check(
-      { key: "health", name: "Google Health", purpose: "Passos do dia (Nutrição e Holiday)", setup: "secret GOOGLE_HEALTH_REFRESH_TOKEN" },
-      !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_HEALTH_REFRESH_TOKEN),
+      { key: "health", name: "Passos", purpose: "Passos do dia (Nutrição e Holiday) — enviados pelo iPhone", setup: "secret STEPS_TOKEN + atalho no iPhone (POST /api/steps)" },
+      !!(env.STEPS_TOKEN || env.GOOGLE_HEALTH_REFRESH_TOKEN),
       async () => {
-        const { token, error } = await googleHealthAccessToken();
-        if (!token) throw new Error(error || "token recusado");
-        return "autorizado";
+        // Fonte principal: o atalho do iPhone grava em daily_steps.
+        const { data } = await sb.from("daily_steps").select("date, steps, source, updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+        const ageH = data ? (Date.now() - new Date(data.updated_at).getTime()) / 3600000 : null;
+        if (data && ageH !== null && ageH < 36) {
+          const via = data.source === "iphone" ? "iPhone" : data.source === "fitbit" ? "Google Health" : data.source;
+          return `${Number(data.steps).toLocaleString("pt-PT")} passos em ${data.date} · via ${via}, há ${ageH < 1 ? "menos de 1 h" : `${Math.round(ageH)} h`}`;
+        }
+        if (env.GOOGLE_HEALTH_REFRESH_TOKEN) {
+          const { token, error } = await googleHealthAccessToken();
+          if (token) return "Google Health autorizado";
+          if (!env.STEPS_TOKEN) throw new Error(error || "token recusado");
+        }
+        if (!env.STEPS_TOKEN) throw new Error("falta o secret STEPS_TOKEN");
+        throw new Error(data ? `o último envio do iPhone foi há ${Math.round(ageH!)} h — verifica a automação dos Atalhos` : "ainda não chegou nenhum envio do iPhone — configura o atalho");
       }
     ),
     check(

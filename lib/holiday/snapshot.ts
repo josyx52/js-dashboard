@@ -99,7 +99,7 @@ export async function buildSnapshot(
   ]);
 
   let steps: number | null = stepsQ.data?.steps ?? null;
-  if (steps === null && !opts.skipRemote) {
+  if (steps === null && !opts.skipRemote && process.env.GOOGLE_HEALTH_REFRESH_TOKEN) {
     // Google Health e opcional — se falhar, o Holiday segue sem passos.
     steps = await fetchFitbitSteps(today)
       .then((r) => r.steps)
