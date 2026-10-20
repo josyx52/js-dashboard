@@ -1,4 +1,5 @@
 import { claimsDone, honestReply } from "./honesty";
+import { explicitlyAsked } from "./intent";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSnapshot } from "./snapshot";
 import { detectSignals, groupProblems, type Problem } from "./engines";
@@ -277,7 +278,8 @@ export async function think(
     const risk = ACTIONS[v.type].risk;
     // No briefing so corre sozinho o que mexe na memoria/notas do proprio Holiday.
     const selfOnly = ["remember", "forget", "save_task_note", "create_automation", "set_automation"].includes(v.type);
-    const autoRun = risk === "low" && (opts.kind === "chat" || selfOnly);
+    const asked = opts.kind === "chat" && explicitlyAsked(v.type, opts.message);
+    const autoRun = (risk === "low" && (opts.kind === "chat" || selfOnly)) || asked;
     const exec = autoRun ? await executeAction(sb, v.type as ActionType, v.params, snapshot.today) : null;
 
     const { data: row } = await sb

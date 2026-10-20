@@ -41,7 +41,9 @@ export const ACTIONS: Record<ActionType, ActionSpec> = {
   reschedule_task: { risk: "high", params: '{"task_id": string (so Todoist e nao recorrente), "due_date": "YYYY-MM-DD"}' },
   schedule_event: {
     risk: "high",
-    params: '{"summary": string, "start": ISO com fuso, "end": ISO com fuso, "reminder_minutes"?: number}',
+    params:
+      '{"summary": string, "start": ISO com fuso de Lisboa, "end"?: ISO (omite = 15 min), "reminder_minutes"?: number (0 = notificar a hora; omite = 10), ' +
+      '"recurrence"?: "RRULE:FREQ=DAILY" | "RRULE:FREQ=WEEKLY;BYDAY=MO,WE" | ... (so se ele pedir repeticao)}',
   },
   // Memoria e GTD: so mexem nos dados do proprio Holiday, por isso sao "low".
   remember: {
@@ -147,18 +149,23 @@ export function validateProposal(
     }
     case "schedule_event": {
       const start = new Date(a.start);
-      const end = new Date(a.end);
+      // Lembrete sem fim indicado: 15 min.
+      const end = a.end ? new Date(a.end) : new Date(start.getTime() + 15 * 60000);
       const summary = String(a.summary || "").trim();
       if (!summary || isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
         return { ok: false, error: "evento invalido" };
       }
+      if (start.getTime() < Date.now() - 5 * 60000 && !a.recurrence) return { ok: false, error: "evento no passado" };
+      const recurrence = typeof a.recurrence === "string" && /^RRULE:FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;[A-Z]+=[A-Z0-9,+-]+)*$/.test(a.recurrence) ? a.recurrence : null;
       const when = start.toLocaleString("pt-PT", {
         timeZone: "Europe/Lisbon",
+        weekday: "short",
         day: "2-digit",
         month: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
       });
+      const rm = Number(a.reminder_minutes);
       return {
         ok: true,
         type,
@@ -166,9 +173,10 @@ export function validateProposal(
           summary,
           start: start.toISOString(),
           end: end.toISOString(),
-          reminder_minutes: Number(a.reminder_minutes) > 0 ? Number(a.reminder_minutes) : 30,
+          reminder_minutes: Number.isFinite(rm) && rm >= 0 ? Math.min(rm, 40320) : 10,
+          recurrence,
         },
-        summary: `Agendar "${summary}" — ${when}`,
+        summary: `Google Calendar: "${summary}" — ${when}${recurrence ? " (repete)" : ""}`,
       };
     }
     case "remember": {
@@ -314,8 +322,8 @@ export async function executeAction(
       return { ok: true, result: `nova data ${params.due_date}` };
     }
     case "schedule_event": {
-      const r = await addCalendarEvent(params.summary, params.start, params.end, params.reminder_minutes);
-      return r.ok ? { ok: true, result: "evento criado no Google Calendar" } : { ok: false, result: r.error || "falhou" };
+      const r = await addCalendarEvent(params.summary, params.start, params.end, params.reminder_minutes, params.recurrence || undefined);
+      return r.ok ? { ok: true, result: "criado no Google Calendar (com notificação)" } : { ok: false, result: r.error || "falhou" };
     }
     case "remember": {
       const { error } = await sb.from("holiday_memories").insert({

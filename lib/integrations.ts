@@ -303,14 +303,19 @@ export async function addCalendarEvent(
   summary: string,
   start: string,
   end: string,
-  reminderMinutes?: number
+  reminderMinutes?: number,
+  recurrence?: string // ex: "RRULE:FREQ=WEEKLY;BYDAY=MO"
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   const token = await googleAccessToken();
   if (!token) return { ok: false, error: "sem acesso ao Google Calendar" };
-  const body: any = { summary, start: { dateTime: start }, end: { dateTime: end } };
-  if (reminderMinutes) {
+  // O fuso e obrigatorio nos eventos que se repetem (e evita surpresas na mudanca de hora).
+  const tz = "Europe/Lisbon";
+  const body: any = { summary, start: { dateTime: start, timeZone: tz }, end: { dateTime: end, timeZone: tz } };
+  if (reminderMinutes !== undefined && reminderMinutes >= 0) {
+    // Notificacao no telemovel (0 = a hora do evento).
     body.reminders = { useDefault: false, overrides: [{ method: "popup", minutes: reminderMinutes }] };
   }
+  if (recurrence) body.recurrence = [recurrence];
   const r = await fetch(calendarEventsUrl(), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
