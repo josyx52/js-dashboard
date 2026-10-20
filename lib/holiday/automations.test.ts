@@ -76,3 +76,19 @@ describe("eventsDue (automacoes por evento)", () => {
     expect(eventsDue([old], [{ id: "overdue:estudo", area: "estudo" as const, severity: "alta" as const, title: "x" }], at)).toHaveLength(1);
   });
 });
+
+describe("uma vez (como o \"once\" do Lachesis)", () => {
+  const once = auto({ trigger: "uma_vez", run_at: "2026-10-23T08:00:00.000Z", days: [5], time: "09:00" }); // sexta 09:00 Lisboa
+
+  it("so aparece no proprio dia, nao todas as semanas", () => {
+    const occ = occurrences([once], "2026-10-19", "2026-11-01");
+    expect(occ.map((o) => o.date)).toEqual(["2026-10-23"]);
+    expect(occ[0].at).toBe("2026-10-23T08:00:00.000Z");
+  });
+
+  it("corre a hora e depois de correr nao volta a aparecer", () => {
+    expect(dueNow([once], new Date("2026-10-23T08:05:00Z")).run).toHaveLength(1);
+    expect(dueNow([once], new Date("2026-10-23T07:55:00Z")).run).toHaveLength(0);
+    expect(occurrences([{ ...once, last_run_at: "2026-10-23T08:05:00Z" }], "2026-10-23", "2026-10-30")).toHaveLength(0);
+  });
+});

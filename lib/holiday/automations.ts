@@ -24,7 +24,9 @@ export interface Automation {
   last_run_at: string | null;
   // "horario": dias + hora. "evento": dispara quando as regras detetam `event`,
   // nos dias marcados, a partir de `time`, no maximo 1x a cada cooldown_hours.
-  trigger?: "horario" | "evento";
+  // "uma_vez": corre em `run_at` e desliga-se (o "once" do Lachesis no Jarvis).
+  trigger?: "horario" | "evento" | "uma_vez";
+  run_at?: string | null;
   event?: string | null;
   cooldown_hours?: number;
 }
@@ -105,7 +107,15 @@ export function occurrences(autos: Automation[], from: string, to: string): Occu
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const wd = weekdayOf(d);
     for (const a of autos) {
-      if (isEvent(a) || !a.days.includes(wd)) continue;
+      if (isEvent(a)) continue;
+      if (a.trigger === "uma_vez") {
+        // Uma so ocorrencia, no dia de run_at, e so enquanto nao correu.
+        if (a.run_at && !a.last_run_at && dateInTimeZone(new Date(a.run_at), HOLIDAY_TZ) === d) {
+          out.push({ automation: a, date: d, at: new Date(a.run_at).toISOString() });
+        }
+        continue;
+      }
+      if (!a.days.includes(wd)) continue;
       out.push({ automation: a, date: d, at: zonedTimeToUtc(d, a.time, HOLIDAY_TZ).toISOString() });
     }
   }
@@ -150,7 +160,10 @@ export async function runDueAutomations(
       status: "perdida",
       result: "o ciclo não correu a tempo",
     });
-    await sb.from("holiday_automations").update({ last_run_at: now.toISOString() }).eq("id", o.automation.id);
+    await sb
+      .from("holiday_automations")
+      .update({ last_run_at: now.toISOString(), ...(o.automation.trigger === "uma_vez" ? { active: false } : {}) })
+      .eq("id", o.automation.id);
   }
 
   let llmRuns = 0;
@@ -197,6 +210,8 @@ export async function runDueAutomations(
       result: result.slice(0, 500),
       message_id: messageId,
     });
+    // Uma vez: cumprida, desliga-se (fica no historico).
+    if (a.trigger === "uma_vez") await sb.from("holiday_automations").update({ active: false }).eq("id", a.id);
     ran += 1;
   }
 

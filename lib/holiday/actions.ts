@@ -60,8 +60,9 @@ export const ACTIONS: Record<ActionType, ActionSpec> = {
   create_automation: {
     risk: "low",
     params:
-      '{"name": string curta, "kind": "lembrete"|"analise"|"trabalho", "prompt": string (mensagem ou o que fazer), "days": [0-6], "time": "HH:MM", ' +
-      '"trigger"?: "horario"|"evento", "event"?: um dos EVENTOS, "cooldown_hours"?: 4|12|24|48} — com trigger "evento", time e a hora a partir da qual pode disparar',
+      '{"name": string curta, "kind": "lembrete"|"analise"|"trabalho", "prompt": string (instrucao COMPLETA e autonoma: o que fazer, sobre o que, e o que entregar), ' +
+      '"trigger"?: "horario"|"evento"|"uma_vez", "days"?: [0-6], "time"?: "HH:MM", "run_at"?: ISO com fuso (so "uma_vez"), "event"?: um dos EVENTOS, "cooldown_hours"?: 4|12|24|48} — ' +
+      'horario = repete (days+time); uma_vez = so em run_at ("daqui a 1h", "sexta as 9h"); evento = quando as regras detetam a situacao, a partir de time',
   },
   set_automation: { risk: "low", params: '{"automation_id": string, "active": boolean}' },
   // Notion: pesquisar e so leitura (o resultado volta ao teu raciocinio); criar pede aprovacao.
@@ -81,7 +82,7 @@ export const READ_ACTIONS: ActionType[] = ["notion_search"];
 export interface ValidationContext {
   memoryIds?: Set<string>;
   memoryContents?: string[];
-  automations?: { id: string; name: string }[];
+  automations?: { id: string; name: string; active?: boolean }[];
   notion?: { connected: boolean; parentId: string | null; parentTitle: string | null };
 }
 
@@ -214,12 +215,31 @@ export function validateProposal(
       const name = String(a.name || "").trim().slice(0, 80);
       const prompt = String(a.prompt || "").trim().slice(0, 1000);
       const kind = ["lembrete", "analise", "trabalho"].includes(a.kind) ? a.kind : null;
-      const days = normalizeDays(a.days);
-      const time = normalizeTime(String(a.time || ""));
-      if (!name || !prompt || !kind || !days || !time) return { ok: false, error: "automacao invalida" };
-      if ((ctx.automations || []).some((x) => x.name.toLowerCase() === name.toLowerCase())) {
+      if (!name || !prompt || !kind) return { ok: false, error: "automacao invalida" };
+      // Dedup pelo nome normalizado (como o Lachesis): nao duplicar o que ja existe.
+      const norm = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+      if ((ctx.automations || []).some((x) => x.active !== false && norm(x.name) === norm(name))) {
         return { ok: false, error: "ja existe uma automacao com esse nome" };
       }
+      if (a.trigger === "uma_vez") {
+        // Uma so vez: "daqui a 1 hora", "na sexta as 9h". Corre em run_at e desliga-se.
+        const at = new Date(a.run_at);
+        if (isNaN(at.getTime()) || at.getTime() < Date.now() - 60000) return { ok: false, error: "run_at invalido ou no passado" };
+        const lis = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Lisbon", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+        const [hh, mm] = lis.format(at).replace(/^\w+\s/, "").split(":").map(Number);
+        const slot = normalizeTime(`${hh}:${Math.floor(mm / 15) * 15}`)!;
+        const wd = new Date(at.toLocaleString("en-US", { timeZone: "Europe/Lisbon" })).getDay();
+        const when = at.toLocaleString("pt-PT", { timeZone: "Europe/Lisbon", weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        return {
+          ok: true,
+          type,
+          params: { name, kind, prompt, days: [wd], time: slot, trigger: "uma_vez", run_at: at.toISOString() },
+          summary: `Nova automação: ${name} — uma vez, ${when}`,
+        };
+      }
+      const days = normalizeDays(a.days);
+      const time = normalizeTime(String(a.time || ""));
+      if (!days || !time) return { ok: false, error: "automacao invalida" };
       const trigger = a.trigger === "evento" ? "evento" : "horario";
       if (trigger === "evento" && !EVENTS[a.event]) return { ok: false, error: "evento desconhecido" };
       const cooldown = [1, 2, 4, 8, 12, 24, 48, 72, 168].includes(Number(a.cooldown_hours)) ? Number(a.cooldown_hours) : 24;

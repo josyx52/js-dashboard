@@ -224,7 +224,7 @@ export async function think(
   const ctx = {
     memoryIds: new Set(memory.longTerm.map((x) => x.id)),
     memoryContents: memory.longTerm.map((x) => x.content),
-    automations: memory.automations.map((x) => ({ id: x.id, name: x.name })),
+    automations: memory.automations.map((x) => ({ id: x.id, name: x.name, active: x.active })),
     notion: notionCtx,
   };
 
@@ -267,6 +267,8 @@ export async function think(
   r = { ...r, actions: r.actions.filter((x) => x.type !== "approve_pending" && x.type !== "reject_pending") };
 
   for (const p of r.actions) {
+    // Automacoes nao criam nem mexem noutras automacoes (evita cadeias sem fim).
+    if (opts.kind === "automation" && (p.type === "create_automation" || p.type === "set_automation")) continue;
     const v = validateProposal(p, snapshot, ctx);
     if (!v.ok) continue; // proposta invalida (id inventado, duplicada, etc.) — descartada
     // A foto ja registou a refeicao — nao registar outra vez a mesma.
@@ -279,7 +281,11 @@ export async function think(
     // No briefing so corre sozinho o que mexe na memoria/notas do proprio Holiday.
     const selfOnly = ["remember", "forget", "save_task_note", "create_automation", "set_automation"].includes(v.type);
     const asked = opts.kind === "chat" && explicitlyAsked(v.type, opts.message);
-    const autoRun = (risk === "low" && (opts.kind === "chat" || selfOnly)) || asked;
+    // Como no Jarvis: numa automacao que ele proprio criou, a autorizacao foi
+    // dada quando a gravou — o que ela manda fazer corre sem novo cartao.
+    // Excepcao: concluir tarefas (irreversivel na origem) continua a pedir.
+    const authorizedByAutomation = opts.kind === "automation" && v.type !== "complete_task";
+    const autoRun = (risk === "low" && (opts.kind === "chat" || selfOnly)) || asked || authorizedByAutomation;
     const exec = autoRun ? await executeAction(sb, v.type as ActionType, v.params, snapshot.today) : null;
 
     const { data: row } = await sb

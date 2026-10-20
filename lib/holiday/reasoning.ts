@@ -81,10 +81,15 @@ reminder_minutes 0. Repetido ("todas as segundas as 9h", "todos os dias as 21h")
 (RRULE). Um pedido explicito destes e executado logo — confirma em 1 frase o que criaste e quando.
 NUNCA uses create_automation para lembretes dele, a nao ser que ele peca expressamente "aqui na app/no chat".
 
-AUTOMACOES: trabalho que TU fazes sozinho, agendado (analise = pensas e respondes; trabalho = trabalhas numa
-tarefa delegada; lembrete = mensagem no chat, so se ele pedir no chat). Cria com create_automation (days:
-0=domingo..6=sabado; time HH:MM em passos de 15 min). Para pausar/retomar usa set_automation. Nao dupliques
-automacoes que ja existem.
+AUTOMACOES (como o Lachesis do Jarvis): trabalho que TU fazes sozinho mais tarde (analise = pensas e respondes;
+trabalho = trabalhas numa tarefa delegada; lembrete = mensagem no chat, so se ele pedir no chat). Cria com
+create_automation:
+- uma vez ("daqui a 1 hora verifica...", "na sexta as 9h analisa...") -> trigger "uma_vez" com run_at;
+- a repetir ("todas as segundas as 9h analisa a semana") -> trigger "horario" com days (0=domingo..6=sabado) e time;
+- quando algo acontecer -> trigger "evento".
+O "prompt" tem de ser uma instrucao completa e autonoma (vais le-la sozinho, sem esta conversa). Quando correr,
+o que ela mandar fazer e executado sem novo pedido de aprovacao (excepto concluir tarefas). NUNCA digas "volto
+daqui a X" sem criar a automacao. Na confirmacao diz quando corre. Pausar/retomar: set_automation. Nao dupliques.
 Como no Jarvis, tambem podem disparar POR EVENTO (trigger "evento"): quando as regras detetam uma situacao
 ("quando eu nao registar refeicoes", "se o sync parar", "quando houver tarefas atrasadas ha muito"). Eventos:
 meals:none, overdue, overdue_old, today, deficit:off, weight:stale, sync:stale, gtd:holiday_backlog, gtd:unclarified, dup.
@@ -276,7 +281,13 @@ export async function reason(input: {
         ? m.automations
             .map(
               (a) =>
-                `- [${a.id}] ${a.name} (${a.kind}) ${a.trigger === "evento" ? `EVENTO ${a.event} a partir das ${a.time}` : a.time} dias ${a.days.join(",")}${a.active ? "" : " PAUSADA"}`
+                `- [${a.id}] ${a.name} (${a.kind}) ${
+                  a.trigger === "evento"
+                    ? `EVENTO ${a.event} a partir das ${a.time} dias ${a.days.join(",")}`
+                    : a.trigger === "uma_vez"
+                      ? `UMA VEZ em ${a.run_at}`
+                      : `${a.time} dias ${a.days.join(",")}`
+                }${a.active ? "" : a.trigger === "uma_vez" ? " (JA CORREU)" : " PAUSADA"}`
             )
             .join("\n")
         : "(nenhuma)"

@@ -78,6 +78,7 @@ o resultado volta ao raciocínio na mesma resposta) e cria páginas com o seu tr
 aprovação) na página de destino escolhida em Integrações.
 
 **Automações** (`lib/holiday/automations.ts`, `holiday_automations`), como no Jarvis (Lachesis + SolutionEngine):
+- *uma vez* — corre em `run_at` e desliga-se ("daqui a 1 hora verifica…", "na sexta às 9h analisa…");
 - *por horário* — dias da semana + hora (Lisboa, passos de 15 min);
 - *por evento* — disparam quando as regras detetam uma situação (sem refeições, atrasadas, atrasadas graves, rotina
   por fazer, défice fora da meta, peso antigo, sync parado, delegadas sem trabalho, por esclarecer, duplicados),
@@ -123,6 +124,7 @@ Migrações em `supabase/migrations/`, aplicadas por ordem no SQL Editor do Supa
   e não deixa criar integrações com nomes repetidos.
 - `0011` — coluna `recurring` em `tasks_cache`; `0012` — tabelas do Holiday; `0013` — memória, histórico
   diário e campos GTD; `0014` — automações; `0015` — configuração por integração; `0016` — definições da app; `0017` — automações por evento.
+- `0019` — automações "uma vez" (`run_at`).
 - `0018` — `activity_log` (histórico de conclusões: o sync junta o registo de atividade do Todoist — que inclui a
   rotina mas no plano gratuito só cobre os últimos dias — com as concluídas por data, 90 dias na primeira vez; TickTick
   regista quando a tarefa sai das abertas) e `calendar_events` (Google Calendar de −90 a +14 dias).

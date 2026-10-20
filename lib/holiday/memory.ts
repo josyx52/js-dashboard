@@ -31,6 +31,7 @@ export interface AutomationBrief {
   active: boolean;
   trigger?: string;
   event?: string | null;
+  run_at?: string | null;
 }
 
 export interface Memory {
@@ -94,7 +95,7 @@ export async function loadMemory(sb: SupabaseClient, s: Snapshot, signals: Signa
       .limit(1)
       .maybeSingle(),
     sb.from("holiday_actions").select("summary, status, result").gte("created_at", dayStart).order("created_at"),
-    sb.from("holiday_automations").select("id, name, kind, days, time, active, trigger, event").order("time"),
+    sb.from("holiday_automations").select("id, name, kind, days, time, active, trigger, event, run_at").order("time"),
   ]);
 
   // O que mudou desde a ultima resposta do Holiday.

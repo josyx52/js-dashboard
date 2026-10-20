@@ -37,7 +37,8 @@ interface Automation {
   active: boolean;
   created_by: "eu" | "holiday";
   last_run_at: string | null;
-  trigger: "horario" | "evento";
+  trigger: "horario" | "evento" | "uma_vez";
+  run_at?: string | null;
   event: string | null;
   cooldown_hours: number;
 }
@@ -93,10 +94,19 @@ const EMPTY = {
   prompt: "",
   days: [1, 2, 3, 4, 5],
   time: "09:00",
-  trigger: "horario" as "horario" | "evento",
+  trigger: "horario" as "horario" | "evento" | "uma_vez",
   event: "meals:none",
   cooldown_hours: 24,
+  run_at: "", // "YYYY-MM-DDTHH:MM" hora de Lisboa (so "uma vez")
 };
+
+// ISO -> valor do <input type="datetime-local"> em hora de Lisboa.
+function toLocalInput(iso?: string | null) {
+  if (!iso) return "";
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso));
+  const g = (t: string) => p.find((x) => x.type === t)?.value;
+  return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
+}
 const COOLDOWNS = [1, 4, 12, 24, 48, 168];
 const cooldownText = (h: number) => (h >= 168 ? "1x por semana" : h >= 24 ? `1x a cada ${h / 24} dia${h > 24 ? "s" : ""}` : `1x a cada ${h} h`);
 
@@ -111,6 +121,7 @@ function toForm(a: Automation): typeof EMPTY {
     trigger: a.trigger || "horario",
     event: a.event || "meals:none",
     cooldown_hours: a.cooldown_hours || 24,
+    run_at: toLocalInput(a.run_at),
   };
 }
 
@@ -181,6 +192,7 @@ export default function AutomacoesPage() {
         trigger: editing.trigger,
         event: editing.event,
         cooldown_hours: editing.cooldown_hours,
+        run_at: editing.trigger === "uma_vez" ? editing.run_at : undefined,
       };
       if (editing.id) await api(`/api/automations/${editing.id}`, { method: "PATCH", body });
       else await api("/api/automations", { body });
@@ -452,13 +464,16 @@ export default function AutomacoesPage() {
                       <span className="text-[13.5px] font-medium">{a.name}</span>
                       <Badge tone={KIND[a.kind].tone}>{KIND[a.kind].label}</Badge>
                       {a.trigger === "evento" && <Badge tone="warning">Evento</Badge>}
+                      {a.trigger === "uma_vez" && <Badge tone="info">Uma vez</Badge>}
                       {a.created_by === "holiday" && <Badge tone="violet">Criada pelo Holiday</Badge>}
-                      {!a.active && <Badge>Pausada</Badge>}
+                      {!a.active && <Badge>{a.trigger === "uma_vez" ? "Concluída" : "Pausada"}</Badge>}
                     </div>
                     <div className="text-[12px] text-fg-3 mt-1">
                       {a.trigger === "evento"
                         ? `Quando ${(events[a.event || ""] || a.event || "").toLowerCase()} · ${daysText(a.days)} a partir das ${a.time} · ${cooldownText(a.cooldown_hours)}`
-                        : `${daysText(a.days)} às ${a.time}`}
+                        : a.trigger === "uma_vez"
+                          ? (a.run_at ? new Date(a.run_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon", weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "")
+                          : `${daysText(a.days)} às ${a.time}`}
                     </div>
                   </div>
                   <div className="flex gap-1">
@@ -590,15 +605,23 @@ export default function AutomacoesPage() {
 
             <div>
               <Label>Quando corre</Label>
-              <Segmented<"horario" | "evento">
+              <Segmented<"horario" | "evento" | "uma_vez">
                 value={editing.trigger}
                 onChange={(v) => setEditing({ ...editing, trigger: v })}
                 options={[
-                  { value: "horario", label: "Por horário" },
+                  { value: "horario", label: "A repetir" },
+                  { value: "uma_vez", label: "Uma vez" },
                   { value: "evento", label: "Por evento", color: KIND.evento.color },
                 ]}
               />
             </div>
+
+            {editing.trigger === "uma_vez" && (
+              <div>
+                <Label hint="hora de Lisboa">Dia e hora</Label>
+                <Input type="datetime-local" value={editing.run_at} onChange={(e) => setEditing({ ...editing, run_at: e.target.value })} className="w-[230px] tabular" />
+              </div>
+            )}
 
             {editing.trigger === "evento" && (
               <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
@@ -637,7 +660,7 @@ export default function AutomacoesPage() {
                   ? `O Holiday publica esta mensagem no chat ${editing.trigger === "evento" ? "quando o evento acontecer" : "à hora marcada"}.`
                   : editing.kind === "analise"
                   ? "O Holiday analisa o teu estado (tarefas, nutrição, histórico) e responde no chat."
-                  : "O Holiday trabalha nisto sozinho e deixa o resultado no chat (o que mexer no Todoist/calendário pede aprovação)."}
+                  : "O Holiday trabalha nisto sozinho e deixa o resultado no chat. O que a instrução mandar fazer (calendário, Todoist, Notion) corre sem pedir de novo — só concluir tarefas pede aprovação."}
               </p>
             </div>
 
@@ -651,6 +674,7 @@ export default function AutomacoesPage() {
               />
             </div>
 
+            {editing.trigger !== "uma_vez" && (
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
               <div>
                 <Label hint={editing.days.length ? daysText(editing.days) : "nenhum dia"}>Dias</Label>
@@ -685,6 +709,7 @@ export default function AutomacoesPage() {
                 </Select>
               </div>
             </div>
+            )}
           </div>
         )}
       </Modal>
