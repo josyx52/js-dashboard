@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>Real Mar — Capa Facebook</title>
+<style>
+  @font-face{font-family:"Jost";font-weight:500;src:url(assets/fonts/jost-latin-500-normal.woff2) format("woff2")}
+  @font-face{font-family:"Jost";font-weight:600;src:url(assets/fonts/jost-latin-600-normal.woff2) format("woff2")}
+  @font-face{font-family:"DM Mono";font-weight:500;src:url(assets/fonts/dm-mono-latin-500-normal.woff2) format("woff2")}
+
+  :root{
+    --navy-900:#0b1b36; --navy-700:#112a52; --navy-500:#1a3b6e;
+    --sand:#ece8df; --terracotta:#cf6140; --gold:#c2a468;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{width:1640px;height:624px;background:var(--navy-900);overflow:hidden}
+
+  /* Tela do Facebook: 1640x624 (2x de 820x312). */
+  .cover{position:relative;width:1640px;height:624px;overflow:hidden;
+    background:
+      radial-gradient(ellipse 55% 85% at 50% 38%, #1d4075 0%, rgba(29,64,117,0) 70%),
+      linear-gradient(180deg,var(--navy-700) 0%,var(--navy-900) 100%);
+    font-family:"Jost",sans-serif;color:var(--sand)}
+
+  .layer{position:absolute;inset:0;width:100%;height:100%}
+
+  /* Zona segura: visível em telemóvel (recorte central) e desktop.
+     Perfil sobrepõe o centro-baixo no telemóvel, por isso o conteúdo fica no terço superior. */
+  .safe{position:absolute;left:402px;top:60px;width:836px;height:290px;
+    display:flex;align-items:center;justify-content:space-between}
+
+  .brand{width:236px;display:flex;flex-direction:column;align-items:center;gap:20px}
+  .brand img{width:190px;height:auto;display:block;
+    filter:drop-shadow(0 6px 18px rgba(0,0,0,.35))}
+  .brand .word{font-weight:500;font-size:24px;letter-spacing:.5em;margin-right:-.5em;color:var(--sand)}
+
+  .divider{width:2px;height:220px;flex:none;
+    background:linear-gradient(180deg,rgba(194,164,104,0),var(--gold) 18%,var(--gold) 82%,rgba(194,164,104,0))}
+
+  .copy{width:540px}
+  h1{font-weight:500;font-size:56px;line-height:1.07;letter-spacing:.01em;color:var(--sand)}
+  h1 em{font-style:normal;font-weight:600;color:var(--terracotta);position:relative;display:inline-block}
+  h1 em svg{position:absolute;left:0;bottom:-14px;width:100%;height:14px;overflow:visible}
+  .tag{margin-top:34px;display:flex;align-items:center;gap:11px;
+    font-family:"DM Mono",monospace;font-weight:500;font-size:14.5px;letter-spacing:.15em;text-transform:uppercase;color:#c9cfdb}
+  .tag i{width:5px;height:5px;border-radius:50%;background:var(--gold);flex:none}
+
+  /* Linha fina dourada de acabamento */
+  .frame{position:absolute;inset:18px;border:1px solid rgba(194,164,104,.22);border-radius:2px}
+</style>
+</head>
+<body>
+<div class="cover" id="cover">
+
+  <!-- Textura de água (linhas horizontais, como na capa original) -->
+  <svg class="layer" aria-hidden="true">
+    <defs>
+      <filter id="water" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.0012 0.5" numOctaves="2" seed="11" result="n"/>
+        <feColorMatrix in="n" type="matrix" values="0 0 0 0 .55  0 0 0 0 .7  0 0 0 0 .95  0 0 0 1.6 -.62"/>
+      </filter>
+      <filter id="grain" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4"/>
+        <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .5 -.18"/>
+      </filter>
+      <linearGradient id="vig" x1="0" x2="1">
+        <stop offset="0" stop-color="#050e1e" stop-opacity=".55"/>
+        <stop offset=".28" stop-color="#050e1e" stop-opacity="0"/>
+        <stop offset=".72" stop-color="#050e1e" stop-opacity="0"/>
+        <stop offset="1" stop-color="#050e1e" stop-opacity=".55"/>
+      </linearGradient>
+    </defs>
+    <rect width="1640" height="624" filter="url(#water)" opacity=".22"/>
+    <rect width="1640" height="624" filter="url(#grain)" opacity=".16"/>
+    <rect width="1640" height="624" fill="url(#vig)"/>
+  </svg>
+
+  <!-- Ondas decorativas: só decoração, ocupam toda a largura (desktop) -->
+  <svg class="layer" viewBox="0 0 1640 624" preserveAspectRatio="none" aria-hidden="true">
+    <g fill="none" stroke-linecap="round">
+      <path d="M-20 470 C 220 410, 420 540, 700 480 S 1180 400, 1400 470 S 1600 500, 1680 450" stroke="#c2a468" stroke-opacity=".30" stroke-width="1.6"/>
+      <path d="M-20 505 C 240 450, 450 575, 730 520 S 1190 440, 1410 508 S 1610 536, 1680 490" stroke="#c2a468" stroke-opacity=".18" stroke-width="1.4"/>
+      <path d="M-20 540 C 260 492, 470 604, 760 560 S 1200 480, 1420 546 S 1620 570, 1680 530" stroke="#8fb0e0" stroke-opacity=".14" stroke-width="1.4"/>
+      <path d="M-20 574 C 280 534, 490 628, 790 600 S 1210 520, 1430 584 S 1630 604, 1680 570" stroke="#8fb0e0" stroke-opacity=".10" stroke-width="1.2"/>
+    </g>
+    <!-- grande onda translúcida ao fundo -->
+    <path d="M0 360 C 300 290, 520 430, 820 360 S 1340 290, 1640 380 L1640 624 L0 624 Z" fill="#8fb0e0" fill-opacity=".045"/>
+  </svg>
+
+  <div class="frame"></div>
+
+  <div class="safe">
+    <div class="brand">
+      <img src="assets/logo-mark.svg" alt="Real Mar">
+      <div class="word">REAL MAR</div>
+    </div>
+    <div class="divider"></div>
+    <div class="copy">
+      <h1>O que vês é<br>o que <em>chega.
+        <svg viewBox="0 0 200 14" preserveAspectRatio="none"><path d="M0 8 C 30 0, 55 14, 90 7 S 160 2, 200 8" fill="none" stroke="#cf6140" stroke-width="3" stroke-linecap="round" opacity=".85"/></svg>
+      </em></h1>
+      <div class="tag"><span>Marisco fresco</span><i></i><span>Entregue em casa</span><i></i><span>Luanda</span></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
