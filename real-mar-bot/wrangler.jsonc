@@ -1,0 +1,12 @@
+{
+  "name": "real-mar-bot",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "vars": {
+    "GROQ_MODEL": "llama-3.3-70b-versatile",
+    "SUPABASE_URL": "https://SEU-PROJETO.supabase.co",
+    "HUMAN_NOTIFY_NUMBER": ""
+  }
+  // Segredos (wrangler secret put <NOME>): GROQ_API_KEY, SUPABASE_SERVICE_KEY,
+  // BIRD_API_KEY, BIRD_WEBHOOK_SECRET
+}
